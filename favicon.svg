@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0f172a"/>
+  <!-- Left strand -->
+  <path d="M10 4 C10 8 22 10 22 14 C22 18 10 20 10 24 C10 28 22 30 22 30" stroke="#3b82f6" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <!-- Right strand -->
+  <path d="M22 4 C22 8 10 10 10 14 C10 18 22 20 22 24 C22 28 10 30 10 30" stroke="#10b981" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <!-- Rungs -->
+  <line x1="11.5" y1="8.2" x2="20.5" y2="9.8" stroke="#64748b" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="10.2" y1="14" x2="21.8" y2="14" stroke="#64748b" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="11.5" y1="19.8" x2="20.5" y2="21.4" stroke="#64748b" stroke-width="1.4" stroke-linecap="round"/>
+</svg>
