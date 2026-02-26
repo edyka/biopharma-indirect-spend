@@ -502,3 +502,16 @@ textarea.form-control { resize: vertical; min-height: 80px; }
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Budget Targets Table */
+.target-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.target-table th { background: var(--primary); color: var(--text); padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600; }
+.target-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.target-input { width: 90px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 12px; text-align: right; outline: none; }
+.target-input:focus { border-color: var(--accent); }
+.target-year-header { text-align: center; min-width: 120px; }
+.target-year-remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(239,68,68,0.2); color: var(--danger); border: none; cursor: pointer; font-size: 11px; margin-left: 6px; line-height: 1; vertical-align: middle; }
+.target-year-remove:hover { background: rgba(239,68,68,0.4); }
+.target-total-row td { font-weight: 700; background: var(--primary); border-bottom: none; border-top: 1px solid var(--border-light); }
+.variance-pos { color: var(--danger); }
+.variance-neg { color: var(--success); }

@@ -50,6 +50,7 @@
   ];
 
   const STORAGE_KEY = 'biopharma_indirect_spend_data';
+  const TARGETS_KEY = 'biopharma_category_targets';
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // ---- State ----
@@ -68,6 +69,7 @@
   let activePage = 'overview';
   let dirtyPages = new Set();
   let aiAdvisorKey = '';
+  let categoryTargets = {};
   const AI_KEY_STORAGE = 'biopharma_claude_api_key';
 
   // ---- Utility Functions ----
@@ -156,6 +158,19 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
     } catch (e) { console.error('Save error:', e); toast('Failed to save data: ' + e.message, 'error'); }
+  }
+
+  function loadTargets() {
+    try { categoryTargets = JSON.parse(localStorage.getItem(TARGETS_KEY) || '{}'); } catch(e) { categoryTargets = {}; }
+  }
+
+  function saveTargets() {
+    try { localStorage.setItem(TARGETS_KEY, JSON.stringify(categoryTargets)); } catch(e) {}
+  }
+
+  function getBudgetTarget(cat, year) {
+    return (categoryTargets[year] && categoryTargets[year][cat] != null)
+      ? categoryTargets[year][cat] : null;
   }
 
   function applyGlobalFilters() {
@@ -287,7 +302,7 @@
       case 'savings':     renderSavingsPage(); break;
       case 'suppliers':   renderSupplierPage(); break;
       case 'requesters':  renderRequesterPage(); break;
-      case 'datamanage':  updateDataSummary(); break;
+      case 'datamanage':  updateDataSummary(); renderTargetSettings(); break;
       case 'ai-advisor':  renderAIAdvisor(); break;
     }
     dirtyPages.delete(pageId);
@@ -354,7 +369,21 @@
   function renderCategorySummary() {
     const body = document.getElementById('category-summary-body');
     const foot = document.getElementById('category-summary-foot');
+    const thead = document.querySelector('#category-summary-table thead tr');
     const data = filteredData;
+
+    // Determine if we have a specific year filter active for budget columns
+    const yearVal = document.getElementById('filter-year').value;
+    const showBudget = yearVal !== 'all';
+
+    // Update header
+    if (thead) {
+      let headerHtml = '<th>Cost Category</th><th>ACT Spend</th><th>Baseline</th><th>Price Impact</th><th>Volume Impact</th><th>Insourcing</th><th>Target Prelim.</th>';
+      if (showBudget) {
+        headerHtml += `<th>Budget TGT${yearVal}</th><th>vs Budget</th>`;
+      }
+      thead.innerHTML = headerHtml;
+    }
 
     const catData = {};
     CATEGORIES.forEach(c => { catData[c] = { actual: 0, baseline: 0, price: 0, volume: 0, insourcing: 0 }; });
@@ -370,7 +399,7 @@
       catData[cat].insourcing += row.insourcing_savings_usd || 0;
     });
 
-    let totals = { actual: 0, baseline: 0, price: 0, volume: 0, insourcing: 0 };
+    let totals = { actual: 0, baseline: 0, price: 0, volume: 0, insourcing: 0, budget: 0, hasBudget: false };
     let html = '';
     CATEGORIES.forEach(cat => {
       const d = catData[cat];
@@ -381,7 +410,6 @@
       totals.volume += d.volume;
       totals.insourcing += d.insourcing;
 
-      const hasData = d.actual !== 0 || d.baseline !== 0;
       html += '<tr data-category="' + cat + '" style="cursor:pointer">';
       html += '<td>' + cat + '</td>';
       html += '<td>' + fmtK(d.actual) + '</td>';
@@ -390,16 +418,39 @@
       html += '<td class="' + (d.volume < 0 ? 'positive' : d.volume > 0 ? 'negative' : '') + '">' + (d.volume ? fmtK(d.volume) : '') + '</td>';
       html += '<td class="' + (d.insourcing < 0 ? 'positive' : '') + '">' + (d.insourcing ? fmtK(d.insourcing) : '') + '</td>';
       html += '<td class="positive">' + fmtK(target) + '</td>';
+      if (showBudget) {
+        const budget = getBudgetTarget(cat, yearVal);
+        if (budget != null) {
+          totals.budget += budget;
+          totals.hasBudget = true;
+          const variance = d.actual - budget;
+          html += '<td>' + fmtK(budget) + '</td>';
+          html += '<td class="' + (variance <= 0 ? 'variance-neg' : 'variance-pos') + '">' + (variance <= 0 ? '' : '+') + fmtK(variance) + '</td>';
+        } else {
+          html += '<td>—</td><td>—</td>';
+        }
+      }
       html += '</tr>';
     });
     body.innerHTML = html;
 
     const totalTarget = totals.actual + totals.price + totals.volume + totals.insourcing;
-    foot.innerHTML = '<tr><td>TOTAL</td><td>' + fmtK(totals.actual) + '</td><td>' +
+    let footHtml = '<tr><td>TOTAL</td><td>' + fmtK(totals.actual) + '</td><td>' +
       (totals.baseline ? fmtK(totals.baseline) : fmtK(totals.actual)) + '</td><td class="' +
       (totals.price < 0 ? 'positive' : '') + '">' + fmtK(totals.price) + '</td><td class="' +
       (totals.volume < 0 ? 'positive' : '') + '">' + fmtK(totals.volume) + '</td><td class="' +
-      (totals.insourcing < 0 ? 'positive' : '') + '">' + fmtK(totals.insourcing) + '</td><td class="positive">' + fmtK(totalTarget) + '</td></tr>';
+      (totals.insourcing < 0 ? 'positive' : '') + '">' + fmtK(totals.insourcing) + '</td><td class="positive">' + fmtK(totalTarget) + '</td>';
+    if (showBudget) {
+      if (totals.hasBudget) {
+        const totalVariance = totals.actual - totals.budget;
+        footHtml += '<td>' + fmtK(totals.budget) + '</td>';
+        footHtml += '<td class="' + (totalVariance <= 0 ? 'variance-neg' : 'variance-pos') + '">' + (totalVariance <= 0 ? '' : '+') + fmtK(totalVariance) + '</td>';
+      } else {
+        footHtml += '<td>—</td><td>—</td>';
+      }
+    }
+    footHtml += '</tr>';
+    foot.innerHTML = footHtml;
 
     // Row click -> navigate to category analysis (event delegation)
     body.onclick = (e) => {
@@ -855,24 +906,39 @@
     });
 
     const cats = Object.keys(catData).sort((a, b) => catData[b].actual - catData[a].actual);
+    const yearVal = document.getElementById('filter-year').value;
+
+    const datasets = [
+      { label: 'Actual', data: cats.map(c => catData[c].actual / 1000), backgroundColor: '#3b82f6', borderRadius: 3 },
+      { label: 'Baseline', data: cats.map(c => (catData[c].baseline || catData[c].actual) / 1000), backgroundColor: '#64748b', borderRadius: 3 },
+      { label: 'Target', data: cats.map(c => {
+        const d = catData[c];
+        return d.target ? d.target / 1000 : (d.actual + d.savings) / 1000;
+      }), backgroundColor: '#10b981', borderRadius: 3 }
+    ];
+
+    // Add Budget dataset if a specific year is selected and targets exist
+    if (yearVal !== 'all') {
+      const budgetData = cats.map(c => {
+        const b = getBudgetTarget(c, yearVal);
+        return b != null ? b / 1000 : null;
+      });
+      if (budgetData.some(v => v != null)) {
+        datasets.push({ label: 'Budget', data: budgetData, backgroundColor: '#f59e0b', borderRadius: 3 });
+      }
+    }
+
     const ctx = document.getElementById('chart-category-comparison');
     if (!ctx) return;
     charts.catComparison = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: cats.map(c => c.length > 20 ? c.slice(0, 18) + '..' : c),
-        datasets: [
-          { label: 'Actual', data: cats.map(c => catData[c].actual / 1000), backgroundColor: '#3b82f6', borderRadius: 3 },
-          { label: 'Baseline', data: cats.map(c => (catData[c].baseline || catData[c].actual) / 1000), backgroundColor: '#64748b', borderRadius: 3 },
-          { label: 'Target', data: cats.map(c => {
-            const d = catData[c];
-            return d.target ? d.target / 1000 : (d.actual + d.savings) / 1000;
-          }), backgroundColor: '#10b981', borderRadius: 3 }
-        ]
+        datasets
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw.toFixed(1) + 'k USD' } } },
+        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) : '—') + 'k USD' } } },
         scales: {
           y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v + 'k' } },
           x: { grid: { display: false }, ticks: { color: '#94a3b8', maxRotation: 45 } }
@@ -1067,6 +1133,24 @@
     const totalSpend = data.filter(r => !r.budget_type || r.budget_type === 'Actual').reduce((s, r) => s + r.total_amount_usd, 0);
     const savingsPct = totalSpend > 0 ? (Math.abs(totalSavings) / totalSpend * 100).toFixed(1) : '0.0';
 
+    // vs Budget KPI — only when a specific year is selected and targets exist
+    const yearVal = document.getElementById('filter-year').value;
+    let vsBudgetHtml = '';
+    if (yearVal !== 'all') {
+      let totalBudget = 0, hasBudget = false;
+      CATEGORIES.forEach(cat => {
+        const b = getBudgetTarget(cat, yearVal);
+        if (b != null) { totalBudget += b; hasBudget = true; }
+      });
+      if (hasBudget) {
+        const vsBudget = totalBudget - totalSpend; // positive = under budget (good)
+        const pctOfBudget = totalBudget > 0 ? Math.abs(vsBudget / totalBudget * 100).toFixed(1) : '0.0';
+        vsBudgetHtml = `<div class="kpi-card"><div class="kpi-icon ${vsBudget >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><polyline points="20 4 4 4"/></svg></div>
+          <div class="kpi-label">vs Budget ${yearVal}</div><div class="kpi-value">${fmtUSD(Math.abs(vsBudget))}</div>
+          <div class="kpi-change ${vsBudget >= 0 ? 'positive' : 'negative'}">${vsBudget >= 0 ? pctOfBudget + '% under budget' : pctOfBudget + '% over budget'}</div></div>`;
+      }
+    }
+
     document.getElementById('savings-kpis').innerHTML = `
       <div class="kpi-card"><div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
         <div class="kpi-label">Price Impact</div><div class="kpi-value">${fmtUSD(totalPrice)}</div>
@@ -1080,6 +1164,7 @@
       <div class="kpi-card"><div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
         <div class="kpi-label">Total Savings</div><div class="kpi-value">${fmtUSD(totalSavings)}</div>
         <div class="kpi-change ${totalSavings <= 0 ? 'positive' : 'negative'}">${savingsPct}% of spend</div></div>
+      ${vsBudgetHtml}
     `;
   }
 
@@ -1454,6 +1539,106 @@
     });
   }
 
+  // ---- Budget Targets ----
+  function renderTargetSettings() {
+    const body = document.getElementById('target-settings-body');
+    if (!body) return;
+
+    const years = Object.keys(categoryTargets).sort();
+
+    if (years.length === 0) {
+      body.innerHTML = '<p style="padding:20px 16px;color:var(--text-muted);font-size:13px;">No budget years defined. Click <strong style="color:var(--text)">+ Add Year</strong> to get started.</p>';
+      body.onchange = null;
+      body.onclick = null;
+      return;
+    }
+
+    let html = '<div class="data-table-wrapper"><table class="target-table"><thead><tr>';
+    html += '<th style="min-width:220px">Category</th>';
+    years.forEach(yr => {
+      html += `<th class="target-year-header">${yr} <button class="target-year-remove" data-year="${yr}" title="Remove year ${yr}">×</button></th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    CATEGORIES.forEach(cat => {
+      html += `<tr><td>${cat}</td>`;
+      years.forEach(yr => {
+        const stored = (categoryTargets[yr] && categoryTargets[yr][cat] != null) ? categoryTargets[yr][cat] : null;
+        const displayVal = stored != null ? Math.round(stored / 1000) : '';
+        html += `<td style="text-align:center"><input class="target-input" type="number" step="1" min="0" placeholder="—" data-cat="${cat}" data-year="${yr}" value="${displayVal}"></td>`;
+      });
+      html += '</tr>';
+    });
+
+    // Total row
+    html += '<tr class="target-total-row"><td>TOTAL (kUSD)</td>';
+    years.forEach(yr => {
+      let total = 0, hasAny = false;
+      CATEGORIES.forEach(cat => {
+        const v = categoryTargets[yr] && categoryTargets[yr][cat];
+        if (v != null && v > 0) { total += v; hasAny = true; }
+      });
+      html += `<td id="target-total-${yr}" style="text-align:center;padding:6px 12px;">${hasAny ? fmtK(total) : '—'}</td>`;
+    });
+    html += '</tr></tbody></table></div>';
+
+    body.innerHTML = html;
+
+    body.onchange = function(e) {
+      const input = e.target;
+      if (!input.classList.contains('target-input')) return;
+      const cat = input.dataset.cat;
+      const year = input.dataset.year;
+      const val = parseFloat(input.value);
+      if (!categoryTargets[year]) categoryTargets[year] = {};
+      if (input.value === '' || isNaN(val) || val < 0) {
+        delete categoryTargets[year][cat];
+      } else {
+        categoryTargets[year][cat] = val * 1000;
+      }
+      saveTargets();
+      // Update year total
+      let total = 0, hasAny = false;
+      CATEGORIES.forEach(c => {
+        const v = categoryTargets[year] && categoryTargets[year][c];
+        if (v != null && v > 0) { total += v; hasAny = true; }
+      });
+      const totalEl = document.getElementById('target-total-' + year);
+      if (totalEl) totalEl.textContent = hasAny ? fmtK(total) : '—';
+      dirtyPages.add('overview');
+      dirtyPages.add('categories');
+      dirtyPages.add('savings');
+    };
+
+    body.onclick = function(e) {
+      const btn = e.target.closest('.target-year-remove');
+      if (!btn) return;
+      const year = btn.dataset.year;
+      if (!confirm('Remove all budget targets for ' + year + '?')) return;
+      delete categoryTargets[year];
+      saveTargets();
+      renderTargetSettings();
+      dirtyPages.add('overview');
+      dirtyPages.add('categories');
+      dirtyPages.add('savings');
+    };
+  }
+
+  function addTargetYear() {
+    const yr = prompt('Enter year to add budget targets (e.g. 2027):');
+    if (!yr) return;
+    const trimmed = yr.trim();
+    const num = parseInt(trimmed);
+    if (isNaN(num) || trimmed.length !== 4 || num < 2000 || num > 2099) {
+      toast('Please enter a valid 4-digit year between 2000 and 2099.', 'error');
+      return;
+    }
+    const key = String(num);
+    if (!categoryTargets[key]) categoryTargets[key] = {};
+    saveTargets();
+    renderTargetSettings();
+  }
+
   // ---- Data Summary ----
   function updateDataSummary() {
     const el = document.getElementById('data-summary');
@@ -1700,6 +1885,9 @@
         fileInput.value = '';
       }
     });
+
+    // Budget targets
+    document.getElementById('btn-add-target-year').addEventListener('click', addTargetYear);
 
     // Data management buttons
     document.getElementById('btn-download-template').addEventListener('click', downloadTemplate);
@@ -3123,6 +3311,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
   // ---- Initialize ----
   function init() {
     aiAdvisorKey = localStorage.getItem(AI_KEY_STORAGE) || '';
+    loadTargets();
     setupEventListeners();
     setupTabs();
     setupSAPWizardEvents();
