@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioPharma Indirect Spend Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>IndirectSpend</h1>
+        <div class="subtitle">BioProd Menges Tracker</div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">Analytics</div>
+        <div class="nav-item active" data-page="overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Overview Dashboard
+        </div>
+        <div class="nav-item" data-page="datatable">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/><path d="M9 6v12"/></svg>
+          Spend Data Table
+        </div>
+        <div class="nav-item" data-page="categories">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M12 3v9l6 3"/></svg>
+          Category Analysis
+        </div>
+        <div class="nav-item" data-page="savings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+          Savings Tracker
+        </div>
+        <div class="nav-section">Intelligence</div>
+        <div class="nav-item" data-page="suppliers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Supplier Analysis
+        </div>
+        <div class="nav-item" data-page="requesters">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+          Requester Analysis
+        </div>
+        <div class="nav-item nav-item-ai" data-page="ai-advisor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 012 2v1a7 7 0 010 14v1a2 2 0 01-4 0v-1a7 7 0 010-14V4a2 2 0 012-2z"/><circle cx="12" cy="12" r="3"/><path d="M12 5V3M12 21v-2M5 12H3M21 12h-2M7.05 7.05L5.64 5.64M18.36 18.36l-1.41-1.41M7.05 16.95l-1.41 1.41M18.36 5.64l-1.41 1.41"/></svg>
+          AI Advisor
+        </div>
+        <div class="nav-section">Management</div>
+        <div class="nav-item" data-page="datamanage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Data Management
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div>Data loaded: <span id="record-count">0</span> records</div>
+        <div style="margin-top:4px">Last update: <span id="last-update">--</span></div>
+      </div>
+    </aside>
+    <div class="main-content">
+      <header class="topbar">
+        <div class="topbar-title" id="page-title">Overview Dashboard</div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary btn-sm" id="btn-print-report">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print Report
+          </button>
+        </div>
+        <div class="topbar-filters">
+          <div class="filter-group">
+            <label>Year:</label>
+            <select class="filter-select" id="filter-year"><option value="all">All Years</option></select>
+          </div>
+          <div class="filter-group">
+            <label>Month:</label>
+            <select class="filter-select" id="filter-month">
+              <option value="all">All Months</option>
+              <option value="1">January</option><option value="2">February</option>
+              <option value="3">March</option><option value="4">April</option>
+              <option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option>
+              <option value="9">September</option><option value="10">October</option>
+              <option value="11">November</option><option value="12">December</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Category:</label>
+            <select class="filter-select" id="filter-category"><option value="all">All Categories</option></select>
+          </div>
+        </div>
+      </header>
+      <div class="page-container">
+        <!-- OVERVIEW -->
+        <div class="page active" id="page-overview">
+          <div class="kpi-grid" id="kpi-grid"></div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Monthly Spend Trend</div><div class="card-subtitle">Actual spend by month (kUSD)</div></div></div>
+              <div class="chart-container"><canvas id="chart-monthly-trend"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Spend by Category</div><div class="card-subtitle">Distribution across categories</div></div></div>
+              <div class="chart-container"><canvas id="chart-category-pie"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Indirect Spend Summary per Category (kUSD)</div><div class="card-subtitle">Click a category row to drill down</div></div></div>
+            <div class="data-table-wrapper">
+              <table class="category-summary-table" id="category-summary-table">
+                <thead><tr><th>Cost Category</th><th>ACT Spend</th><th>Baseline</th><th>Price Impact</th><th>Volume Impact</th><th>Insourcing</th><th>Target Prelim.</th></tr></thead>
+                <tbody id="category-summary-body"></tbody>
+                <tfoot id="category-summary-foot"></tfoot>
+              </table>
+            </div>
+          </div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Top 10 SKUs by Spend</div><div class="card-subtitle">Highest spend items</div></div></div>
+              <ul class="top-list" id="top-skus-list"></ul>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Top 10 Suppliers by Spend</div><div class="card-subtitle">Highest spend vendors</div></div></div>
+              <ul class="top-list" id="top-suppliers-list"></ul>
+            </div>
+          </div>
+        </div>
+        <!-- DATA TABLE -->
+        <div class="page" id="page-datatable">
+          <div class="card">
+            <div class="table-toolbar">
+              <div class="table-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="table-search-input" placeholder="Search all columns...">
+              </div>
+              <div class="table-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-add-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Entry</button>
+                <button class="btn btn-secondary btn-sm" id="btn-export-csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+                <button class="btn btn-secondary btn-sm" id="btn-toggle-filters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>Column Filters</button>
+              </div>
+            </div>
+            <div class="add-row-form" id="add-row-form" style="display:none">
+              <div class="form-group"><label>Date (YYYY-MM)</label><input type="month" class="form-control" id="add-date"></div>
+              <div class="form-group"><label>Cost Category</label><select class="form-control" id="add-category"><option value="">Select...</option><option>Clinical, Lab and scientific services</option><option>Production Equipment</option><option>External Warehouse and distribution</option><option>Professional Services</option><option>Facilities Management</option><option>Office and print</option><option>Utilities</option><option>Other</option></select></div>
+              <div class="form-group"><label>Sub-Category</label><input type="text" class="form-control" id="add-subcategory" placeholder="e.g. Analytical testing"></div>
+              <div class="form-group"><label>SKU / Item Code</label><input type="text" class="form-control" id="add-sku" placeholder="e.g. LAB-0042"></div>
+              <div class="form-group"><label>Item Description</label><input type="text" class="form-control" id="add-description" placeholder="e.g. HPLC Column C18"></div>
+              <div class="form-group"><label>Supplier</label><input type="text" class="form-control" id="add-supplier" placeholder="e.g. Biorelliance"></div>
+              <div class="form-group"><label>Ordered By</label><input type="text" class="form-control" id="add-orderedby" placeholder="e.g. John Smith"></div>
+              <div class="form-group"><label>Department</label><input type="text" class="form-control" id="add-department" placeholder="e.g. QC Laboratory"></div>
+              <div class="form-group"><label>Cost Center</label><input type="text" class="form-control" id="add-costcenter" placeholder="e.g. CC-4200"></div>
+              <div class="form-group"><label>PO Number</label><input type="text" class="form-control" id="add-po" placeholder="e.g. PO-2026-001"></div>
+              <div class="form-group"><label>Quantity</label><input type="number" class="form-control" id="add-quantity" placeholder="0" min="0"></div>
+              <div class="form-group"><label>Unit Price (USD)</label><input type="number" class="form-control" id="add-unitprice" placeholder="0.00" step="0.01" min="0"></div>
+              <div class="form-group"><label>Total Amount (USD)</label><input type="number" class="form-control" id="add-totalamount" placeholder="Auto-calculated" step="0.01"></div>
+              <div class="form-group"><label>Budget Type</label><select class="form-control" id="add-budgettype"><option value="Actual">Actual</option><option value="Baseline">Baseline</option><option value="Target">Target</option></select></div>
+              <div class="form-group"><label>Notes</label><input type="text" class="form-control" id="add-notes" placeholder="Optional notes"></div>
+              <div class="form-actions"><button class="btn btn-primary" id="btn-save-row">Save Entry</button><button class="btn btn-secondary" id="btn-cancel-row">Cancel</button></div>
+            </div>
+            <div class="data-table-wrapper" style="max-height:calc(100vh - 320px); overflow-y:auto;">
+              <table class="data-table" id="main-data-table">
+                <thead><tr id="main-table-header"></tr><tr class="filter-row" id="main-table-filters" style="display:none"></tr></thead>
+                <tbody id="main-table-body"></tbody>
+              </table>
+            </div>
+            <div class="table-pagination">
+              <div class="pagination-info" id="pagination-info">Showing 0 of 0 entries</div>
+              <div class="rows-per-page"><span>Rows:</span><select id="rows-per-page"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="500">500</option></select></div>
+              <div class="pagination-controls" id="pagination-controls"></div>
+            </div>
+          </div>
+        </div>
+        <!-- CATEGORY ANALYSIS -->
+        <div class="page" id="page-categories">
+          <div class="filter-chips" id="category-chips"></div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Category Spend Comparison</div><div class="card-subtitle">ACT vs Baseline vs Target</div></div></div>
+              <div class="chart-container"><canvas id="chart-category-comparison"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Category Monthly Trends</div><div class="card-subtitle">Spend evolution per category over time</div></div></div>
+              <div class="chart-container"><canvas id="chart-category-trends"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title" id="cat-detail-title">Category Detail</div><div class="card-subtitle">Select a category chip above to see breakdown</div></div></div>
+            <div class="tabs" id="cat-detail-tabs">
+              <div class="tab active" data-tab="cat-by-sku">By SKU</div>
+              <div class="tab" data-tab="cat-by-supplier">By Supplier</div>
+              <div class="tab" data-tab="cat-by-requester">By Requester</div>
+              <div class="tab" data-tab="cat-monthly">Monthly Breakdown</div>
+            </div>
+            <div class="tab-content active" id="tab-cat-by-sku">
+              <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
+                <table class="data-table" id="cat-sku-table"><thead><tr><th>SKU<span class="sort-indicator"></span></th><th>Description<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th>Qty Ordered<span class="sort-indicator"></span></th><th>Avg Unit Price<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+              </div>
+            </div>
+            <div class="tab-content" id="tab-cat-by-supplier">
+              <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
+                <table class="data-table" id="cat-supplier-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+              </div>
+            </div>
+            <div class="tab-content" id="tab-cat-by-requester">
+              <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
+                <table class="data-table" id="cat-requester-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+              </div>
+            </div>
+            <div class="tab-content" id="tab-cat-monthly">
+              <div class="chart-container"><canvas id="chart-cat-monthly-detail"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <!-- SAVINGS TRACKER -->
+        <div class="page" id="page-savings">
+          <div class="kpi-grid" id="savings-kpis"></div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Savings Waterfall - Price / Demand / Insourcing</div><div class="card-subtitle">Bridge from Baseline to Target</div></div></div>
+            <div class="chart-container" style="min-height:350px"><canvas id="chart-waterfall"></canvas></div>
+            <div class="waterfall-legend">
+              <div class="waterfall-legend-item"><div class="swatch" style="background:#1e293b"></div>Base / Result</div>
+              <div class="waterfall-legend-item"><div class="swatch" style="background:#ef4444"></div>Increase</div>
+              <div class="waterfall-legend-item"><div class="swatch" style="background:#10b981"></div>Savings</div>
+            </div>
+          </div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Savings by Category</div><div class="card-subtitle">Total savings potential per category</div></div></div>
+              <div class="chart-container"><canvas id="chart-savings-by-cat"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Savings Realization Timeline</div><div class="card-subtitle">Cumulative savings materialized over months</div></div></div>
+              <div class="chart-container"><canvas id="chart-savings-timeline"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <!-- SUPPLIER ANALYSIS -->
+        <div class="page" id="page-suppliers">
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Supplier Spend Distribution</div><div class="card-subtitle">Top suppliers by total spend</div></div></div>
+              <div class="chart-container"><canvas id="chart-supplier-bar"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Supplier Concentration (Pareto)</div><div class="card-subtitle">Cumulative % of spend by supplier</div></div></div>
+              <div class="chart-container"><canvas id="chart-supplier-pareto"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">All Suppliers Detail</div><div class="card-subtitle">Click headers to sort</div></div></div>
+            <div class="table-toolbar"><div class="table-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="supplier-search-input" placeholder="Search suppliers..."></div></div>
+            <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
+              <table class="data-table" id="supplier-detail-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Categories<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+        <!-- REQUESTER ANALYSIS -->
+        <div class="page" id="page-requesters">
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Spend by Requester</div><div class="card-subtitle">Who is ordering the most?</div></div></div>
+              <div class="chart-container"><canvas id="chart-requester-bar"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Spend by Department</div><div class="card-subtitle">Department-level breakdown</div></div></div>
+              <div class="chart-container"><canvas id="chart-department-pie"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Requester Detail</div><div class="card-subtitle">Click headers to sort</div></div></div>
+            <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
+              <table class="data-table" id="requester-detail-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Top Category<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+        <!-- AI ADVISOR -->
+        <div class="page" id="page-ai-advisor">
+          <div id="ai-kpi-bar" class="kpi-grid"></div>
+          <div class="ai-advisor-grid">
+            <div class="card" id="ai-opportunities-panel">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Savings Opportunities</div>
+                  <div class="card-subtitle">Automatically detected from your spend data</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-ai-rescan">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                  Rescan
+                </button>
+              </div>
+              <div id="ai-opportunities-list"></div>
+            </div>
+            <div class="card" id="ai-action-panel">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">AI Action Plan</div>
+                  <div class="card-subtitle">Claude generates a tailored procurement strategy</div>
+                </div>
+              </div>
+              <div class="ai-api-config">
+                <div class="form-group">
+                  <label>Anthropic API Key</label>
+                  <input type="password" class="form-control" id="ai-api-key" placeholder="sk-ant-...">
+                </div>
+                <div class="form-group">
+                  <label>Model</label>
+                  <select class="form-control" id="ai-model">
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fast &amp; cost-efficient</option>
+                    <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6 — Detailed analysis</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" id="btn-ai-generate" style="width:100%">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  Generate AI Action Plan
+                </button>
+              </div>
+              <div id="ai-response-area" class="ai-response-area" style="display:none">
+                <div class="ai-response-header">
+                  <span>AI Analysis</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-ai-copy">Copy</button>
+                </div>
+                <div id="ai-response-content" class="ai-response-content"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- DATA MANAGEMENT -->
+        <div class="page" id="page-datamanage">
+          <div class="data-mgmt-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Import Data</div><div class="card-subtitle">Upload CSV file with spend data</div></div></div>
+              <div class="upload-area" id="upload-area">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <h3>Drop CSV file here or click to browse</h3>
+                <p>Supports native format AND SAP S4 HANA exports (auto-detected)</p>
+              </div>
+              <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
+              <input type="file" id="sap-file-input" accept=".csv,.txt" style="display:none">
+              <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="btn-download-template">Download CSV Template</button>
+                <button class="btn btn-secondary" id="btn-load-sample">Load Sample Data</button>
+                <button class="btn btn-success" id="btn-sap-import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>SAP S4 HANA Import Wizard</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Data Actions</div><div class="card-subtitle">Manage your loaded data</div></div></div>
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <button class="btn btn-secondary" id="btn-export-all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export All Data as CSV</button>
+                <button class="btn btn-secondary" id="btn-export-filtered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>Export Filtered Data as CSV</button>
+                <button class="btn btn-danger" id="btn-clear-data"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Clear All Data</button>
+              </div>
+              <div style="margin-top:24px;"><div class="card-title" style="margin-bottom:8px;">Data Summary</div><div id="data-summary" style="font-size:13px;color:var(--text-secondary);line-height:1.8;"></div></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:20px">
+            <div class="card-header"><div><div class="card-title">CSV Format Specification</div><div class="card-subtitle">Your CSV must have these column headers (order does not matter)</div></div></div>
+            <div class="format-spec">
+              <table>
+                <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Description</th><th>Example</th></tr></thead>
+                <tbody>
+                  <tr><td><code>date</code></td><td>Date</td><td>Yes</td><td>Month (YYYY-MM)</td><td>2026-01</td></tr>
+                  <tr><td><code>cost_category</code></td><td>Text</td><td>Yes</td><td>Main category</td><td>Clinical, Lab and scientific services</td></tr>
+                  <tr><td><code>sub_category</code></td><td>Text</td><td>No</td><td>Sub-category</td><td>Analytical testing</td></tr>
+                  <tr><td><code>sku</code></td><td>Text</td><td>Yes</td><td>Item SKU code</td><td>LAB-0042</td></tr>
+                  <tr><td><code>item_description</code></td><td>Text</td><td>Yes</td><td>Item description</td><td>HPLC Column C18</td></tr>
+                  <tr><td><code>supplier</code></td><td>Text</td><td>Yes</td><td>Vendor name</td><td>Biorelliance</td></tr>
+                  <tr><td><code>ordered_by</code></td><td>Text</td><td>Yes</td><td>Requester name</td><td>Jan Novak</td></tr>
+                  <tr><td><code>department</code></td><td>Text</td><td>No</td><td>Department</td><td>QC Laboratory</td></tr>
+                  <tr><td><code>cost_center</code></td><td>Text</td><td>No</td><td>Cost center</td><td>CC-4200</td></tr>
+                  <tr><td><code>po_number</code></td><td>Text</td><td>No</td><td>PO number</td><td>PO-2026-0142</td></tr>
+                  <tr><td><code>quantity</code></td><td>Number</td><td>Yes</td><td>Units ordered</td><td>10</td></tr>
+                  <tr><td><code>unit_price_usd</code></td><td>Number</td><td>Yes</td><td>Price per unit</td><td>450.00</td></tr>
+                  <tr><td><code>total_amount_usd</code></td><td>Number</td><td>Yes</td><td>Total line amount</td><td>4500.00</td></tr>
+                  <tr><td><code>budget_type</code></td><td>Text</td><td>No</td><td>Actual/Baseline/Target</td><td>Actual</td></tr>
+                  <tr><td><code>price_impact_usd</code></td><td>Number</td><td>No</td><td>Price savings vs baseline</td><td>-120.00</td></tr>
+                  <tr><td><code>volume_impact_usd</code></td><td>Number</td><td>No</td><td>Volume change impact</td><td>-50.00</td></tr>
+                  <tr><td><code>insourcing_savings_usd</code></td><td>Number</td><td>No</td><td>Insourcing savings</td><td>-200.00</td></tr>
+                  <tr><td><code>notes</code></td><td>Text</td><td>No</td><td>Additional notes</td><td>Internalized from external lab</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="modal-confirm">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header"><h3 id="confirm-title">Confirm Action</h3><button class="modal-close" id="confirm-close">&times;</button></div>
+      <div class="modal-body"><p id="confirm-message">Are you sure?</p></div>
+      <div class="modal-footer"><button class="btn btn-secondary" id="confirm-cancel">Cancel</button><button class="btn btn-danger" id="confirm-ok">Confirm</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="modal-edit-row">
+    <div class="modal">
+      <div class="modal-header"><h3>Edit Entry</h3><button class="modal-close" id="edit-row-close">&times;</button></div>
+      <div class="modal-body" id="edit-row-body"></div>
+      <div class="modal-footer"><button class="btn btn-secondary" id="edit-row-cancel">Cancel</button><button class="btn btn-danger btn-sm" id="edit-row-delete">Delete Row</button><button class="btn btn-primary" id="edit-row-save">Save Changes</button></div>
+    </div>
+  </div>
+
+  <!-- SAP Import Wizard Modal -->
+  <div class="modal-overlay" id="modal-sap-wizard">
+    <div class="modal" style="max-width:900px;max-height:90vh">
+      <div class="modal-header">
+        <h3 id="sap-wizard-title">SAP S4 HANA Import Wizard</h3>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div id="sap-wizard-steps" style="display:flex;gap:4px;"></div>
+          <button class="modal-close" id="sap-wizard-close">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" id="sap-wizard-body" style="min-height:400px;max-height:calc(90vh - 140px);overflow-y:auto;"></div>
+      <div class="modal-footer" id="sap-wizard-footer">
+        <button class="btn btn-secondary" id="sap-wizard-back" style="display:none">Back</button>
+        <button class="btn btn-primary" id="sap-wizard-next">Next</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast-container" id="toast-container"></div>
+  <script src="app.js"></script>
+</body>
+</html>
