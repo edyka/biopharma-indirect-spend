@@ -582,10 +582,10 @@
 
   function renderTableHeader() {
     const header = document.getElementById('main-table-header');
-    header.innerHTML = COLUMNS.map((col, i) =>
+    header.innerHTML = '<th style="width:36px"></th>' + COLUMNS.map((col, i) =>
       '<th data-col="' + i + '" class="' + (sortColumn === i ? (sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc') : '') + '">' +
       col.label + '<span class="sort-indicator"></span></th>'
-    ).join('') + '<th style="width:60px">Actions</th>';
+    ).join('');
 
     header.querySelectorAll('th[data-col]').forEach(th => {
       th.addEventListener('click', () => {
@@ -607,13 +607,13 @@
     row.style.display = showColumnFilters ? '' : 'none';
     if (!showColumnFilters) return;
 
-    row.innerHTML = COLUMNS.map((col, i) => {
+    row.innerHTML = '<th></th>' + COLUMNS.map((col, i) => {
       if (col.type === 'select') {
         const opts = (col.options || []).map(o => '<option value="' + o + '">' + o + '</option>').join('');
         return '<th><select data-filter-col="' + i + '"><option value="">All</option>' + opts + '</select></th>';
       }
       return '<th><input type="text" data-filter-col="' + i + '" placeholder="Filter..." value="' + (columnFilters[i] || '') + '"></th>';
-    }).join('') + '<th></th>';
+    }).join('');
 
     row.querySelectorAll('[data-filter-col]').forEach(el => {
       const colIdx = parseInt(el.dataset.filterCol);
@@ -681,7 +681,7 @@
 
     body.innerHTML = pageData.map((row) => {
       const globalIdx = row._idx;
-      return '<tr data-idx="' + globalIdx + '">' + COLUMNS.map(col => {
+      return '<tr data-idx="' + globalIdx + '"><td><button class="btn-icon btn-edit-row" data-idx="' + globalIdx + '" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>' + COLUMNS.map(col => {
         const val = row[col.key];
         if (col.type === 'number') {
           if (col.key === 'total_amount_usd' || col.key === 'unit_price_usd') return '<td class="currency">' + fmtUSD(val) + '</td>';
@@ -692,11 +692,11 @@
           return '<td class="num">' + fmt(val) + '</td>';
         }
         return '<td>' + (val || '') + '</td>';
-      }).join('') + '<td><button class="btn-icon btn-edit-row" data-idx="' + globalIdx + '" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td></tr>';
+      }).join('') + '</tr>';
     }).join('');
 
     if (pageData.length === 0) {
-      body.innerHTML = '<tr><td colspan="' + (COLUMNS.length + 1) + '" style="text-align:center;padding:40px;color:var(--text-muted)">No data. Go to Data Management to import a CSV file or load sample data.</td></tr>';
+      body.innerHTML = '<tr><td colspan="' + (COLUMNS.length + 2) + '" style="text-align:center;padding:40px;color:var(--text-muted)">No data. Go to Data Management to import a CSV file or load sample data.</td></tr>';
     }
 
     // Edit buttons
