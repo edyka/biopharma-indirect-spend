@@ -117,6 +117,11 @@
     return MONTH_NAMES[parseInt(parts[1]) - 1] + ' ' + parts[0].slice(2);
   }
 
+  function debounce(fn, ms) {
+    let t;
+    return function(...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
+  }
+
   function toast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     const el = document.createElement('div');
@@ -231,17 +236,31 @@
         });
 
         if (append) {
-          allData = allData.concat(newData);
+          // Deduplicate: skip rows already in allData
+          const existingKeys = new Set(allData.map(r => {
+            return r.po_number ? r.po_number : (r.date + '|' + r.sku + '|' + r.supplier + '|' + r.total_amount_usd);
+          }));
+          const unique = newData.filter(r => {
+            const k = r.po_number ? r.po_number : (r.date + '|' + r.sku + '|' + r.supplier + '|' + r.total_amount_usd);
+            return !existingKeys.has(k);
+          });
+          const skipped = newData.length - unique.length;
+          allData = allData.concat(unique);
+          reindexData();
+          saveToStorage();
+          updateFilterOptions();
+          applyGlobalFilters();
+          refreshAll();
+          toast('Added ' + unique.length + ' new records' + (skipped ? ' — ' + skipped + ' duplicates skipped' : ''), 'success');
         } else {
           allData = newData;
+          reindexData();
+          saveToStorage();
+          updateFilterOptions();
+          applyGlobalFilters();
+          refreshAll();
+          toast('Loaded ' + newData.length + ' records successfully', 'success');
         }
-
-        reindexData();
-        saveToStorage();
-        updateFilterOptions();
-        applyGlobalFilters();
-        refreshAll();
-        toast('Loaded ' + newData.length + ' records successfully', 'success');
         updateFooter();
       },
       error: function(err) {
@@ -755,7 +774,20 @@
         return '<div class="form-group"><label>' + col.label + '</label><input type="' + inputType + '" class="form-control" data-key="' + col.key + '" value="' + val + '" ' + (col.type === 'number' ? 'step="0.01"' : '') + '></div>';
       }).join('') + '</div>';
 
-    document.getElementById('modal-edit-row').classList.add('active');
+    const modal = document.getElementById('modal-edit-row');
+    modal.classList.add('active');
+
+    // Auto-calculate total when qty or unit price changes
+    const qtyEl = body.querySelector('[data-key="quantity"]');
+    const priceEl = body.querySelector('[data-key="unit_price_usd"]');
+    const totalEl = body.querySelector('[data-key="total_amount_usd"]');
+    function recalcTotal() {
+      const q = parseNum(qtyEl && qtyEl.value);
+      const p = parseNum(priceEl && priceEl.value);
+      if (q && p && totalEl) totalEl.value = (q * p).toFixed(2);
+    }
+    if (qtyEl) qtyEl.addEventListener('input', recalcTotal);
+    if (priceEl) priceEl.addEventListener('input', recalcTotal);
   }
 
   function saveEditRow() {
@@ -777,11 +809,17 @@
       row.total_amount_usd = row.quantity * row.unit_price_usd;
     }
 
+    const savedIdx = editingRowIndex;
     saveToStorage();
     applyGlobalFilters();
     refreshAll();
     closeEditModal();
     toast('Entry updated', 'success');
+    // Flash the updated row green
+    requestAnimationFrame(() => {
+      const tr = document.querySelector('#main-table-body tr[data-idx="' + savedIdx + '"]');
+      if (tr) { tr.classList.add('row-saved'); setTimeout(() => tr.classList.remove('row-saved'), 1200); }
+    });
   }
 
   function deleteEditRow() {
@@ -1560,12 +1598,29 @@
     });
     html += '</tr></thead><tbody>';
 
+    // Pre-compute actual spend per category per year from allData
+    const actualByYearCat = {};
+    allData.forEach(r => {
+      if (r.budget_type && r.budget_type !== 'Actual' && r.budget_type !== '') return;
+      const yr = r.date ? r.date.substring(0, 4) : null;
+      if (!yr) return;
+      if (!actualByYearCat[yr]) actualByYearCat[yr] = {};
+      actualByYearCat[yr][r.cost_category] = (actualByYearCat[yr][r.cost_category] || 0) + r.total_amount_usd;
+    });
+
     CATEGORIES.forEach(cat => {
       html += `<tr><td>${cat}</td>`;
       years.forEach(yr => {
         const stored = (categoryTargets[yr] && categoryTargets[yr][cat] != null) ? categoryTargets[yr][cat] : null;
         const displayVal = stored != null ? Math.round(stored / 1000) : '';
-        html += `<td style="text-align:center"><input class="target-input" type="number" step="1" min="0" placeholder="—" data-cat="${cat}" data-year="${yr}" value="${displayVal}"></td>`;
+        const actual = (actualByYearCat[yr] && actualByYearCat[yr][cat]) || 0;
+        let barHtml = '';
+        if (stored != null && stored > 0) {
+          const pctUsed = Math.min(100, actual / stored * 100);
+          const barColor = pctUsed >= 100 ? '#ef4444' : pctUsed >= 85 ? '#f59e0b' : '#10b981';
+          barHtml = `<div class="target-util-bar"><div class="target-util-fill" style="width:${pctUsed.toFixed(1)}%;background:${barColor}"></div></div>`;
+        }
+        html += `<td style="text-align:center"><input class="target-input" type="number" step="1" min="0" placeholder="—" data-cat="${cat}" data-year="${yr}" value="${displayVal}">${barHtml}</td>`;
       });
       html += '</tr>';
     });
@@ -1814,7 +1869,7 @@
     });
 
     // Table search
-    document.getElementById('table-search-input').addEventListener('input', () => { currentPage = 1; renderTableBody(); });
+    document.getElementById('table-search-input').addEventListener('input', debounce(() => { currentPage = 1; renderTableBody(); }, 200));
 
     // Rows per page
     document.getElementById('rows-per-page').addEventListener('change', (e) => { rowsPerPage = parseInt(e.target.value); currentPage = 1; renderTableBody(); });
@@ -1886,6 +1941,15 @@
       }
     });
 
+    // Mobile sidebar toggle
+    const hamburger = document.getElementById('btn-hamburger');
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    function closeSidebar() { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
+    hamburger.addEventListener('click', () => { sidebar.classList.toggle('open'); sidebarOverlay.classList.toggle('active'); });
+    sidebarOverlay.addEventListener('click', closeSidebar);
+    document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', closeSidebar, { capture: true }));
+
     // Budget targets
     document.getElementById('btn-add-target-year').addEventListener('click', addTargetYear);
 
@@ -1937,6 +2001,14 @@
     document.getElementById('edit-row-delete').addEventListener('click', deleteEditRow);
     document.getElementById('edit-row-cancel').addEventListener('click', closeEditModal);
     document.getElementById('edit-row-close').addEventListener('click', closeEditModal);
+
+    // Keyboard shortcuts: Esc closes edit modal, Enter saves it
+    document.addEventListener('keydown', (e) => {
+      const modal = document.getElementById('modal-edit-row');
+      if (!modal.classList.contains('active')) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeEditModal(); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveEditRow(); }
+    });
 
     // Close modals on overlay click
     document.querySelectorAll('.modal-overlay').forEach(overlay => {

@@ -515,3 +515,54 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 .target-total-row td { font-weight: 700; background: var(--primary); border-bottom: none; border-top: 1px solid var(--border-light); }
 .variance-pos { color: var(--danger); }
 .variance-neg { color: var(--success); }
+
+/* Target utilization bars */
+.target-util-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.target-util-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+/* Row flash after save */
+@keyframes rowSaved { 0%,100% { background: transparent; } 30% { background: rgba(16,185,129,0.18); } }
+.row-saved { animation: rowSaved 1.2s ease; }
+
+/* Hamburger button (mobile only) */
+.btn-hamburger {
+  display: none; background: none; border: none; cursor: pointer; padding: 4px;
+  color: var(--text); flex-shrink: 0;
+}
+.btn-hamburger svg { display: block; }
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  z-index: 99; backdrop-filter: blur(2px);
+}
+.sidebar-overlay.active { display: block; }
+
+/* ---- Responsive breakpoints ---- */
+@media (max-width: 900px) {
+  .topbar { padding: 0 14px; gap: 10px; height: auto; min-height: var(--topbar-height); flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+  .topbar-filters { flex-wrap: wrap; gap: 8px; width: 100%; padding-bottom: 4px; }
+  .topbar-title { font-size: 15px; }
+  .filter-select { font-size: 12px; padding: 4px 7px; }
+  .page-container { padding: 14px; }
+  .charts-grid { grid-template-columns: 1fr !important; }
+  .data-mgmt-grid { grid-template-columns: 1fr !important; }
+  .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+}
+
+@media (max-width: 768px) {
+  .btn-hamburger { display: block; }
+  .sidebar {
+    position: fixed; left: -var(--sidebar-width); left: -260px; top: 0; height: 100vh;
+    z-index: 200; transition: transform 0.25s ease; transform: translateX(-100%);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .topbar-actions .btn-print-report span { display: none; }
+  .add-row-form { grid-template-columns: 1fr !important; }
+  .ai-advisor-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (min-width: 769px) {
+  .btn-hamburger { display: none; }
+  .sidebar-overlay { display: none !important; }
+}
