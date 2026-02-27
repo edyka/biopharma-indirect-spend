@@ -72,6 +72,14 @@
           </button>
         </div>
         <div class="topbar-filters">
+          <div class="filter-group currency-toggle">
+            <label>Currency:</label>
+            <div class="toggle-switch" id="currency-toggle" title="Switch between EUR and USD (rate: 1 EUR = 0.851 USD)">
+              <span class="toggle-label active" data-cur="EUR">EUR</span>
+              <span class="toggle-sep">/</span>
+              <span class="toggle-label" data-cur="USD">USD</span>
+            </div>
+          </div>
           <div class="filter-group">
             <label>Year:</label>
             <select class="filter-select" id="filter-year"><option value="all">All Years</option></select>
@@ -100,7 +108,7 @@
           <div class="kpi-grid" id="kpi-grid"></div>
           <div class="charts-grid">
             <div class="card">
-              <div class="card-header"><div><div class="card-title">Monthly Spend Trend</div><div class="card-subtitle">Actual spend by month (kUSD)</div></div></div>
+              <div class="card-header"><div><div class="card-title">Monthly Spend Trend</div><div class="card-subtitle">Actual spend by month (kEUR)</div></div></div>
               <div class="chart-container"><canvas id="chart-monthly-trend"></canvas></div>
             </div>
             <div class="card">
@@ -109,7 +117,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-header"><div><div class="card-title">Indirect Spend Summary per Category (kUSD)</div><div class="card-subtitle">Click a category row to drill down</div></div></div>
+            <div class="card-header"><div><div class="card-title">Indirect Spend Summary per Category (kEUR)</div><div class="card-subtitle">Click a category row to drill down</div></div></div>
             <div class="data-table-wrapper">
               <table class="category-summary-table" id="category-summary-table">
                 <thead><tr><th>Cost Category</th><th>ACT Spend</th><th>Baseline</th><th>Price Impact</th><th>Volume Impact</th><th>Insourcing</th><th>Target Prelim.</th></tr></thead>
@@ -145,7 +153,7 @@
             </div>
             <div class="add-row-form" id="add-row-form" style="display:none">
               <div class="form-group"><label>Date (YYYY-MM)</label><input type="month" class="form-control" id="add-date"></div>
-              <div class="form-group"><label>Cost Category</label><select class="form-control" id="add-category"><option value="">Select...</option><option>Clinical, Lab and scientific services</option><option>Production Equipment</option><option>External Warehouse and distribution</option><option>Professional Services</option><option>Facilities Management</option><option>Office and print</option><option>Utilities</option><option>Other</option></select></div>
+              <div class="form-group"><label>Cost Category</label><select class="form-control" id="add-category"><option value="">Select...</option><option>Clinical, Lab and scientific services</option><option>Production Equipment</option><option>External Warehouse and distribution</option><option>Professional Services</option><option>Miscellaneous Indirect Costs</option><option>Office and Print</option></select></div>
               <div class="form-group"><label>Sub-Category</label><input type="text" class="form-control" id="add-subcategory" placeholder="e.g. Analytical testing"></div>
               <div class="form-group"><label>SKU / Item Code</label><input type="text" class="form-control" id="add-sku" placeholder="e.g. LAB-0042"></div>
               <div class="form-group"><label>Item Description</label><input type="text" class="form-control" id="add-description" placeholder="e.g. HPLC Column C18"></div>
@@ -155,8 +163,8 @@
               <div class="form-group"><label>Cost Center</label><input type="text" class="form-control" id="add-costcenter" placeholder="e.g. CC-4200"></div>
               <div class="form-group"><label>PO Number</label><input type="text" class="form-control" id="add-po" placeholder="e.g. PO-2026-001"></div>
               <div class="form-group"><label>Quantity</label><input type="number" class="form-control" id="add-quantity" placeholder="0" min="0"></div>
-              <div class="form-group"><label>Unit Price (USD)</label><input type="number" class="form-control" id="add-unitprice" placeholder="0.00" step="0.01" min="0"></div>
-              <div class="form-group"><label>Total Amount (USD)</label><input type="number" class="form-control" id="add-totalamount" placeholder="Auto-calculated" step="0.01"></div>
+              <div class="form-group"><label>Unit Price (EUR)</label><input type="number" class="form-control" id="add-unitprice" placeholder="0.00" step="0.01" min="0"></div>
+              <div class="form-group"><label>Total Amount (EUR)</label><input type="number" class="form-control" id="add-totalamount" placeholder="Auto-calculated" step="0.01"></div>
               <div class="form-group"><label>Budget Type</label><select class="form-control" id="add-budgettype"><option value="Actual">Actual</option><option value="Baseline">Baseline</option><option value="Target">Target</option></select></div>
               <div class="form-group"><label>Notes</label><input type="text" class="form-control" id="add-notes" placeholder="Optional notes"></div>
               <div class="form-actions"><button class="btn btn-primary" id="btn-save-row">Save Entry</button><button class="btn btn-secondary" id="btn-cancel-row">Cancel</button></div>
@@ -197,17 +205,17 @@
             </div>
             <div class="tab-content active" id="tab-cat-by-sku">
               <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
-                <table class="data-table" id="cat-sku-table"><thead><tr><th>SKU<span class="sort-indicator"></span></th><th>Description<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th>Qty Ordered<span class="sort-indicator"></span></th><th>Avg Unit Price<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+                <table class="data-table" id="cat-sku-table"><thead><tr><th>SKU<span class="sort-indicator"></span></th><th>Description<span class="sort-indicator"></span></th><th>Total Spend (EUR)<span class="sort-indicator"></span></th><th>Qty Ordered<span class="sort-indicator"></span></th><th>Avg Unit Price<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
               </div>
             </div>
             <div class="tab-content" id="tab-cat-by-supplier">
               <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
-                <table class="data-table" id="cat-supplier-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+                <table class="data-table" id="cat-supplier-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (EUR)<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
               </div>
             </div>
             <div class="tab-content" id="tab-cat-by-requester">
               <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
-                <table class="data-table" id="cat-requester-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+                <table class="data-table" id="cat-requester-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (EUR)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
               </div>
             </div>
             <div class="tab-content" id="tab-cat-monthly">
@@ -254,7 +262,7 @@
             <div class="card-header"><div><div class="card-title">All Suppliers Detail</div><div class="card-subtitle">Click headers to sort</div></div></div>
             <div class="table-toolbar"><div class="table-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="supplier-search-input" placeholder="Search suppliers..."></div></div>
             <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
-              <table class="data-table" id="supplier-detail-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Categories<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+              <table class="data-table" id="supplier-detail-table"><thead><tr><th>Supplier<span class="sort-indicator"></span></th><th>Total Spend (EUR)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th># SKUs<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Categories<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
             </div>
           </div>
         </div>
@@ -273,7 +281,7 @@
           <div class="card">
             <div class="card-header"><div><div class="card-title">Requester Detail</div><div class="card-subtitle">Click headers to sort</div></div></div>
             <div class="data-table-wrapper" style="max-height:400px;overflow-y:auto;">
-              <table class="data-table" id="requester-detail-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (USD)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Top Category<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
+              <table class="data-table" id="requester-detail-table"><thead><tr><th>Requester<span class="sort-indicator"></span></th><th>Department<span class="sort-indicator"></span></th><th>Total Spend (EUR)<span class="sort-indicator"></span></th><th># Orders<span class="sort-indicator"></span></th><th>Avg Order Value<span class="sort-indicator"></span></th><th>Top Category<span class="sort-indicator"></span></th><th>Share %<span class="sort-indicator"></span></th></tr></thead><tbody></tbody></table>
             </div>
           </div>
         </div>
@@ -360,7 +368,7 @@
             <div class="card-header">
               <div>
                 <div class="card-title">Annual Budget Targets per Category</div>
-                <div class="card-subtitle">Set planned spend in kUSD per category per year — used for variance and savings calculations</div>
+                <div class="card-subtitle">Set planned spend in kEUR per category per year — used for variance and savings calculations</div>
               </div>
               <button class="btn btn-secondary btn-sm" id="btn-add-target-year">+ Add Year</button>
             </div>

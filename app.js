@@ -11,10 +11,8 @@
     'Production Equipment',
     'External Warehouse and distribution',
     'Professional Services',
-    'Facilities Management',
-    'Office and print',
-    'Utilities',
-    'Other'
+    'Miscellaneous Indirect Costs',
+    'Office and Print'
   ];
 
   const CATEGORY_COLORS = {
@@ -22,11 +20,13 @@
     'Production Equipment': '#f59e0b',
     'External Warehouse and distribution': '#8b5cf6',
     'Professional Services': '#06b6d4',
-    'Facilities Management': '#10b981',
-    'Office and print': '#ec4899',
-    'Utilities': '#64748b',
-    'Other': '#94a3b8'
+    'Miscellaneous Indirect Costs': '#10b981',
+    'Office and Print': '#ec4899'
   };
+
+  // Currency state
+  const EUR_USD_RATE = 0.851; // 1 EUR = 0.851 USD (2026)
+  let displayCurrency = 'EUR'; // 'EUR' or 'USD'
 
   const COLUMNS = [
     { key: 'date', label: 'Date', type: 'text' },
@@ -41,7 +41,7 @@
     { key: 'po_number', label: 'PO Number', type: 'text' },
     { key: 'quantity', label: 'Qty', type: 'number' },
     { key: 'unit_price_usd', label: 'Unit Price', type: 'number' },
-    { key: 'total_amount_usd', label: 'Total (USD)', type: 'number' },
+    { key: 'total_amount_usd', label: 'Total (EUR)', type: 'number' },
     { key: 'budget_type', label: 'Budget Type', type: 'select', options: ['Actual','Baseline','Target'] },
     { key: 'price_impact_usd', label: 'Price Impact', type: 'number' },
     { key: 'volume_impact_usd', label: 'Volume Impact', type: 'number' },
@@ -80,13 +80,24 @@
 
   function fmtK(n) {
     if (n == null || isNaN(n)) return '--';
-    return (Number(n) / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const val = displayCurrency === 'USD' ? Number(n) * EUR_USD_RATE : Number(n);
+    return (val / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   }
 
-  function fmtUSD(n) {
+  function fmtEUR(n) {
     if (n == null || isNaN(n)) return '--';
-    return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const val = displayCurrency === 'USD' ? Number(n) * EUR_USD_RATE : Number(n);
+    const sym = displayCurrency === 'USD' ? '$' : '€';
+    return sym + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+
+  function curLabel(base) {
+    return displayCurrency === 'USD' ? base.replace('EUR', 'USD') : base;
+  }
+
+  function curSym() { return displayCurrency === 'USD' ? '$' : '€'; }
+  function curK() { return displayCurrency === 'USD' ? 'k USD' : 'k EUR'; }
+  function convK(v) { return displayCurrency === 'USD' ? v * EUR_USD_RATE : v; }
 
   function pct(n, total) {
     if (!total) return '0.0';
@@ -95,7 +106,16 @@
 
   function parseNum(v) {
     if (v == null || v === '') return 0;
-    const n = parseFloat(String(v).replace(/,/g, ''));
+    let s = String(v).replace(/[€\s]/g, '').trim();
+    // EU format detection: comma exists AND is after the last dot → dot=thousands, comma=decimal
+    const lastComma = s.lastIndexOf(',');
+    const lastDot = s.lastIndexOf('.');
+    if (lastComma > -1 && lastComma > lastDot) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      s = s.replace(/,/g, '');
+    }
+    const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   }
 
@@ -217,6 +237,15 @@
         if (results.errors.length > 0) {
           toast('CSV parsing warnings: ' + results.errors.length + ' issues found', 'warning');
         }
+
+        // ---- Izvoz spend format detection ----
+        const headers = results.meta.fields || [];
+        const isIzvoz = headers.some(h => h.trim().toLowerCase().includes('indirect category mapping'));
+        if (isIzvoz) {
+          processIzvozData(results.data, append);
+          return;
+        }
+
         const newData = results.data.map(row => {
           const clean = {};
           COLUMNS.forEach(col => {
@@ -236,7 +265,6 @@
         });
 
         if (append) {
-          // Deduplicate: skip rows already in allData
           const existingKeys = new Set(allData.map(r => {
             return r.po_number ? r.po_number : (r.date + '|' + r.sku + '|' + r.supplier + '|' + r.total_amount_usd);
           }));
@@ -267,6 +295,83 @@
         toast('CSV parse error: ' + err.message, 'error');
       }
     });
+  }
+
+  function processIzvozData(rows, append) {
+    // Find column headers (flexible matching)
+    const findCol = (match) => Object.keys(rows[0] || {}).find(h => h.toLowerCase().includes(match));
+    const catCol = findCol('indirect category') || findCol('category');
+    const vendorCol = findCol('vendor');
+    const spendCol = findCol('ytd spend') || findCol('spend');
+    const targetCol = findCol('target');
+
+    // Aggregate targets per category
+    const targetAgg = {};
+    const newData = [];
+
+    rows.forEach(row => {
+      const category = (row[catCol] || '').trim();
+      if (!category) return;
+
+      const vendor = (row[vendorCol] || '').trim();
+      const spendRaw = parseNum(row[spendCol]);
+      const spendK = Math.abs(spendRaw); // values are in k EUR, negative = spend
+      const spendEUR = spendK * 1000; // convert from k EUR to EUR
+
+      // Aggregate target per category
+      if (targetCol && row[targetCol]) {
+        const tgtRaw = parseNum(row[targetCol]);
+        if (tgtRaw !== 0) {
+          const tgtEUR = Math.abs(tgtRaw) * 1000;
+          if (!targetAgg[category]) targetAgg[category] = 0;
+          targetAgg[category] += tgtEUR;
+        }
+      }
+
+      newData.push({
+        date: '2025-12',
+        cost_category: category,
+        sub_category: '',
+        sku: '',
+        item_description: vendor || category,
+        supplier: vendor,
+        ordered_by: '',
+        department: '',
+        cost_center: '',
+        po_number: '',
+        quantity: 1,
+        unit_price_usd: spendEUR,
+        total_amount_usd: spendEUR,
+        budget_type: 'Actual',
+        price_impact_usd: 0,
+        volume_impact_usd: 0,
+        insourcing_savings_usd: 0,
+        notes: ''
+      });
+    });
+
+    // Save targets for 2026 (only if we have targets)
+    if (Object.keys(targetAgg).length > 0) {
+      if (!categoryTargets['2026']) categoryTargets['2026'] = {};
+      Object.entries(targetAgg).forEach(([cat, val]) => {
+        categoryTargets['2026'][cat] = val;
+      });
+      saveTargets();
+    }
+
+    if (append) {
+      allData = allData.concat(newData);
+    } else {
+      allData = newData;
+    }
+    reindexData();
+    saveToStorage();
+    updateFilterOptions();
+    applyGlobalFilters();
+    refreshAll();
+    updateFooter();
+    toast('Loaded ' + newData.length + ' records from Izvoz spend data' +
+      (Object.keys(targetAgg).length > 0 ? ' — Budget targets for 2026 imported' : ''), 'success');
   }
 
   function exportCSV(data, filename) {
@@ -354,13 +459,13 @@
       <div class="kpi-card">
         <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
         <div class="kpi-label">Total Spend</div>
-        <div class="kpi-value">${fmtUSD(totalSpend)}</div>
-        <div class="kpi-change neutral">${fmtK(totalSpend)}k USD</div>
+        <div class="kpi-value">${fmtEUR(totalSpend)}</div>
+        <div class="kpi-change neutral">${fmtK(totalSpend)}${curK()}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div>
         <div class="kpi-label">Total Savings</div>
-        <div class="kpi-value">${fmtUSD(Math.abs(totalSavings))}</div>
+        <div class="kpi-value">${fmtEUR(Math.abs(totalSavings))}</div>
         <div class="kpi-change ${totalSavings <= 0 ? 'positive' : 'negative'}">${totalSavings <= 0 ? 'Savings' : 'Increase'}</div>
       </div>
       <div class="kpi-card">
@@ -373,7 +478,7 @@
         <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
         <div class="kpi-label">Suppliers</div>
         <div class="kpi-value">${fmt(uniqueSuppliers)}</div>
-        <div class="kpi-change neutral">Avg order: ${fmtUSD(avgOrderValue)}</div>
+        <div class="kpi-change neutral">Avg order: ${fmtEUR(avgOrderValue)}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
@@ -497,7 +602,7 @@
     const maxSKU = topSKUs.length > 0 ? topSKUs[0][1].amount : 1;
     document.getElementById('top-skus-list').innerHTML = topSKUs.map(([sku, d]) =>
       '<li class="top-list-item"><span class="name" title="' + sku + '">' + (d.name.length > 30 ? d.name.slice(0, 28) + '..' : d.name) +
-      '</span><div class="bar-container"><div class="bar-fill" style="width:' + (d.amount / maxSKU * 100) + '%"></div></div><span class="amount">' + fmtUSD(d.amount) + '</span></li>'
+      '</span><div class="bar-container"><div class="bar-fill" style="width:' + (d.amount / maxSKU * 100) + '%"></div></div><span class="amount">' + fmtEUR(d.amount) + '</span></li>'
     ).join('') || '<li class="top-list-item"><span class="name">No data</span></li>';
 
     // Top Suppliers
@@ -511,7 +616,7 @@
     const maxSup = topSup.length > 0 ? topSup[0][1] : 1;
     document.getElementById('top-suppliers-list').innerHTML = topSup.map(([name, amount]) =>
       '<li class="top-list-item"><span class="name">' + (name.length > 25 ? name.slice(0, 23) + '..' : name) +
-      '</span><div class="bar-container"><div class="bar-fill" style="width:' + (amount / maxSup * 100) + '%;background:#8b5cf6"></div></div><span class="amount">' + fmtUSD(amount) + '</span></li>'
+      '</span><div class="bar-container"><div class="bar-fill" style="width:' + (amount / maxSup * 100) + '%;background:#8b5cf6"></div></div><span class="amount">' + fmtEUR(amount) + '</span></li>'
     ).join('') || '<li class="top-list-item"><span class="name">No data</span></li>';
   }
 
@@ -545,7 +650,7 @@
       data: {
         labels: months.map(monthLabel),
         datasets: [{
-          label: 'Spend (kUSD)',
+          label: 'Spend (' + curK() + ')',
           data: values,
           backgroundColor: '#3b82f6',
           borderRadius: 4,
@@ -554,7 +659,7 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtK(ctx.raw * 1000) + 'k USD' } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtK(ctx.raw * 1000) + curK() } } },
         scales: {
           y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v + 'k' } },
           x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
@@ -568,7 +673,7 @@
     const data = filteredData.filter(r => !r.budget_type || r.budget_type === 'Actual' || r.budget_type === '');
     const catMap = {};
     data.forEach(r => {
-      const cat = r.cost_category || 'Other';
+      const cat = r.cost_category || 'Miscellaneous Indirect Costs';
       if (!catMap[cat]) catMap[cat] = 0;
       catMap[cat] += r.total_amount_usd;
     });
@@ -586,7 +691,7 @@
         responsive: true, maintainAspectRatio: false, cutout: '55%',
         plugins: {
           legend: { position: 'right', labels: { color: '#e2e8f0', font: { size: 11 }, padding: 12, usePointStyle: true } },
-          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmtUSD(ctx.raw) + ' (' + pct(ctx.raw, values.reduce((a,b) => a+b, 0)) + '%)' } }
+          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmtEUR(ctx.raw) + ' (' + pct(ctx.raw, values.reduce((a,b) => a+b, 0)) + '%)' } }
         }
       }
     });
@@ -703,10 +808,10 @@
       return '<tr data-idx="' + globalIdx + '"><td><button class="btn-icon btn-edit-row" data-idx="' + globalIdx + '" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>' + COLUMNS.map(col => {
         const val = row[col.key];
         if (col.type === 'number') {
-          if (col.key === 'total_amount_usd' || col.key === 'unit_price_usd') return '<td class="currency">' + fmtUSD(val) + '</td>';
+          if (col.key === 'total_amount_usd' || col.key === 'unit_price_usd') return '<td class="currency">' + fmtEUR(val) + '</td>';
           if (col.key.includes('impact') || col.key.includes('savings')) {
             const cls = val < 0 ? 'positive' : val > 0 ? 'negative' : '';
-            return '<td class="num ' + cls + '">' + (val ? fmtUSD(val) : '') + '</td>';
+            return '<td class="num ' + cls + '">' + (val ? fmtEUR(val) : '') + '</td>';
           }
           return '<td class="num">' + fmt(val) + '</td>';
         }
@@ -976,7 +1081,7 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) : '—') + 'k USD' } } },
+        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (ctx.raw != null ? convK(ctx.raw).toFixed(1) : '—') + curK() } } },
         scales: {
           y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v + 'k' } },
           x: { grid: { display: false }, ticks: { color: '#94a3b8', maxRotation: 45 } }
@@ -1099,13 +1204,13 @@
       type: 'bar',
       data: {
         labels: months.map(monthLabel),
-        datasets: [{ label: 'Spend (USD)', data: months.map(m => monthMap[m]), backgroundColor: selectedCategory ? CATEGORY_COLORS[selectedCategory] : '#3b82f6', borderRadius: 4 }]
+        datasets: [{ label: 'Spend (EUR)', data: months.map(m => monthMap[m]), backgroundColor: selectedCategory ? CATEGORY_COLORS[selectedCategory] : '#3b82f6', borderRadius: 4 }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtUSD(ctx.raw) } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtEUR(ctx.raw) } } },
         scales: {
-          y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => '$' + (v/1000).toFixed(0) + 'k' } },
+          y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => curSym() + (convK(v)/1000).toFixed(0) + 'k' } },
           x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
         }
       }
@@ -1122,7 +1227,7 @@
       tbody.innerHTML = data.map(row =>
         '<tr>' + row.map((val, i) => {
           const f = colFormats[i];
-          if (f.fmt === 'usd') return '<td class="currency">' + fmtUSD(val) + '</td>';
+          if (f.fmt === 'usd') return '<td class="currency">' + fmtEUR(val) + '</td>';
           if (f.fmt === 'num') return '<td class="num">' + fmt(val) + '</td>';
           return '<td>' + (val || '') + '</td>';
         }).join('') + '</tr>'
@@ -1184,23 +1289,23 @@
         const vsBudget = totalBudget - totalSpend; // positive = under budget (good)
         const pctOfBudget = totalBudget > 0 ? Math.abs(vsBudget / totalBudget * 100).toFixed(1) : '0.0';
         vsBudgetHtml = `<div class="kpi-card"><div class="kpi-icon ${vsBudget >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><polyline points="20 4 4 4"/></svg></div>
-          <div class="kpi-label">vs Budget ${yearVal}</div><div class="kpi-value">${fmtUSD(Math.abs(vsBudget))}</div>
+          <div class="kpi-label">vs Budget ${yearVal}</div><div class="kpi-value">${fmtEUR(Math.abs(vsBudget))}</div>
           <div class="kpi-change ${vsBudget >= 0 ? 'positive' : 'negative'}">${vsBudget >= 0 ? pctOfBudget + '% under budget' : pctOfBudget + '% over budget'}</div></div>`;
       }
     }
 
     document.getElementById('savings-kpis').innerHTML = `
       <div class="kpi-card"><div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
-        <div class="kpi-label">Price Impact</div><div class="kpi-value">${fmtUSD(totalPrice)}</div>
+        <div class="kpi-label">Price Impact</div><div class="kpi-value">${fmtEUR(totalPrice)}</div>
         <div class="kpi-change ${totalPrice <= 0 ? 'positive' : 'negative'}">${totalPrice <= 0 ? 'Savings' : 'Increase'}</div></div>
       <div class="kpi-card"><div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div>
-        <div class="kpi-label">Volume Impact</div><div class="kpi-value">${fmtUSD(totalVolume)}</div>
+        <div class="kpi-label">Volume Impact</div><div class="kpi-value">${fmtEUR(totalVolume)}</div>
         <div class="kpi-change ${totalVolume <= 0 ? 'positive' : 'negative'}">${totalVolume <= 0 ? 'Reduction' : 'Increase'}</div></div>
       <div class="kpi-card"><div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></div>
-        <div class="kpi-label">Insourcing Savings</div><div class="kpi-value">${fmtUSD(totalInsourcing)}</div>
+        <div class="kpi-label">Insourcing Savings</div><div class="kpi-value">${fmtEUR(totalInsourcing)}</div>
         <div class="kpi-change ${totalInsourcing <= 0 ? 'positive' : 'negative'}">${totalInsourcing <= 0 ? 'Savings' : 'Cost'}</div></div>
       <div class="kpi-card"><div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></div>
-        <div class="kpi-label">Total Savings</div><div class="kpi-value">${fmtUSD(totalSavings)}</div>
+        <div class="kpi-label">Total Savings</div><div class="kpi-value">${fmtEUR(totalSavings)}</div>
         <div class="kpi-change ${totalSavings <= 0 ? 'positive' : 'negative'}">${savingsPct}% of spend</div></div>
       ${vsBudgetHtml}
     `;
@@ -1291,9 +1396,9 @@
             callbacks: {
               label: ctx => {
                 const idx = ctx.dataIndex;
-                if (idx === 0) return 'Baseline: ' + ctx.raw.toFixed(1) + 'k USD';
-                if (idx === labels.length - 1) return 'Target: ' + ctx.raw.toFixed(1) + 'k USD';
-                return labels[idx] + ': ' + (ctx.raw > 0 ? '-' : '+') + ctx.raw.toFixed(1) + 'k USD';
+                if (idx === 0) return 'Baseline: ' + convK(ctx.raw).toFixed(1) + curK();
+                if (idx === labels.length - 1) return 'Target: ' + convK(ctx.raw).toFixed(1) + curK();
+                return labels[idx] + ': ' + (ctx.raw > 0 ? '-' : '+') + convK(ctx.raw).toFixed(1) + curK();
               }
             }
           }
@@ -1342,7 +1447,7 @@
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw.toFixed(2) + 'k USD' } } },
+        plugins: { legend: { labels: { color: '#e2e8f0', usePointStyle: true } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + convK(ctx.raw).toFixed(2) + curK() } } },
         scales: {
           x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v + 'k' } },
           y: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8' } }
@@ -1372,7 +1477,7 @@
       data: {
         labels: months.map(monthLabel),
         datasets: [{
-          label: 'Cumulative Savings (kUSD)',
+          label: 'Cumulative Savings (' + curK() + ')',
           data: cumData,
           borderColor: '#10b981',
           backgroundColor: 'rgba(16,185,129,0.1)',
@@ -1385,7 +1490,7 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { labels: { color: '#e2e8f0' } }, tooltip: { callbacks: { label: ctx => ctx.raw.toFixed(1) + 'k USD saved' } } },
+        plugins: { legend: { labels: { color: '#e2e8f0' } }, tooltip: { callbacks: { label: ctx => convK(ctx.raw).toFixed(1) + curK() + ' saved' } } },
         scales: {
           y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v + 'k' } },
           x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
@@ -1428,14 +1533,14 @@
       type: 'bar',
       data: {
         labels: top15.map(([n]) => n.length > 18 ? n.slice(0, 16) + '..' : n),
-        datasets: [{ label: 'Spend (USD)', data: top15.map(([, d]) => d.spend), backgroundColor: '#8b5cf6', borderRadius: 4 }]
+        datasets: [{ label: 'Spend (EUR)', data: top15.map(([, d]) => d.spend), backgroundColor: '#8b5cf6', borderRadius: 4 }]
       },
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtUSD(ctx.raw) } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtEUR(ctx.raw) } } },
         scales: {
-          x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => '$' + (v/1000).toFixed(0) + 'k' } },
+          x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => curSym() + (convK(v)/1000).toFixed(0) + 'k' } },
           y: { grid: { display: false }, ticks: { color: '#94a3b8' } }
         }
       }
@@ -1534,14 +1639,14 @@
       type: 'bar',
       data: {
         labels: top15.map(([n]) => n),
-        datasets: [{ label: 'Spend (USD)', data: top15.map(([, d]) => d.spend), backgroundColor: '#06b6d4', borderRadius: 4 }]
+        datasets: [{ label: 'Spend (EUR)', data: top15.map(([, d]) => d.spend), backgroundColor: '#06b6d4', borderRadius: 4 }]
       },
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtUSD(ctx.raw) } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtEUR(ctx.raw) } } },
         scales: {
-          x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => '$' + (v/1000).toFixed(0) + 'k' } },
+          x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => curSym() + (convK(v)/1000).toFixed(0) + 'k' } },
           y: { grid: { display: false }, ticks: { color: '#94a3b8' } }
         }
       }
@@ -1571,7 +1676,7 @@
         responsive: true, maintainAspectRatio: false, cutout: '55%',
         plugins: {
           legend: { position: 'right', labels: { color: '#e2e8f0', font: { size: 11 }, padding: 12, usePointStyle: true } },
-          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmtUSD(ctx.raw) } }
+          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmtEUR(ctx.raw) } }
         }
       }
     });
@@ -1626,7 +1731,7 @@
     });
 
     // Total row
-    html += '<tr class="target-total-row"><td>TOTAL (kUSD)</td>';
+    html += '<tr class="target-total-row"><td>TOTAL (' + curK() + ')</td>';
     years.forEach(yr => {
       let total = 0, hasAny = false;
       CATEGORIES.forEach(cat => {
@@ -1714,7 +1819,7 @@
       'Categories: <strong>' + cats.length + '</strong><br>' +
       'Suppliers: <strong>' + suppliers.length + '</strong><br>' +
       'Requesters: <strong>' + requesters.length + '</strong><br>' +
-      'Total actual spend: <strong>' + fmtUSD(totalSpend) + '</strong>';
+      'Total actual spend: <strong>' + fmtEUR(totalSpend) + '</strong>';
   }
 
   // ---- Sample Data ----
@@ -1725,20 +1830,16 @@
       'Production Equipment': ['Bioreactor parts', 'Filtration systems', 'Chromatography columns', 'Sensors & probes', 'Tubing & connectors'],
       'External Warehouse and distribution': ['Cold storage', 'Ambient storage', 'Distribution services', 'Packaging materials', 'Temperature monitoring'],
       'Professional Services': ['Consulting', 'Regulatory affairs', 'Quality auditing', 'Training services', 'IT services'],
-      'Facilities Management': ['HVAC maintenance', 'Cleanroom services', 'Waste management', 'Pest control', 'Building maintenance'],
-      'Office and print': ['Office supplies', 'Printing services', 'IT equipment', 'Furniture'],
-      'Utilities': ['Electricity', 'Water', 'Gas', 'Telecommunications'],
-      'Other': ['Miscellaneous', 'Travel', 'Subscriptions', 'Memberships']
+      'Miscellaneous Indirect Costs': ['Travel', 'Subscriptions', 'Memberships', 'General supplies'],
+      'Office and Print': ['Office supplies', 'Printing services', 'IT equipment', 'Furniture']
     };
     const suppliers = {
       'Clinical, Lab and scientific services': ['Biorelliance', 'Eurofins', 'SGS', 'Charles River Labs', 'WuXi AppTec', 'Lek Pharmaceuticals'],
       'Production Equipment': ['Sartorius', 'Pall Corporation', 'GE Healthcare', 'Merck Millipore', 'Cytiva', 'Thermo Fisher'],
       'External Warehouse and distribution': ['DHL Life Sciences', 'World Courier', 'Marken', 'FedEx Custom Critical', 'Kuehne+Nagel'],
       'Professional Services': ['Deloitte', 'KPMG', 'PwC', 'Accenture', 'McKinsey'],
-      'Facilities Management': ['CBRE', 'JLL', 'ISS', 'Sodexo', 'Lombar GmbH'],
-      'Office and print': ['Staples', 'Office Depot', 'Dell Technologies', 'HP Inc'],
-      'Utilities': ['E.ON', 'RWE', 'Local Water Utility', 'Deutsche Telekom'],
-      'Other': ['Various', 'Amazon Business', 'Local vendors']
+      'Miscellaneous Indirect Costs': ['Various', 'Amazon Business', 'Local vendors', 'NIL d.o.o.'],
+      'Office and Print': ['Mladinska Knjiga', 'Office Depot', 'Dell Technologies', 'HP Inc']
     };
     const requesters = [
       { name: 'Jan Novak', dept: 'QC Laboratory', cc: 'CC-4200' },
@@ -1760,7 +1861,7 @@
 
     // Weight categories by typical spend
     const catWeights = { 'Clinical, Lab and scientific services': 35, 'Production Equipment': 25, 'External Warehouse and distribution': 15,
-      'Professional Services': 5, 'Facilities Management': 3, 'Office and print': 2, 'Utilities': 1, 'Other': 4 };
+      'Professional Services': 5, 'Miscellaneous Indirect Costs': 3, 'Office and Print': 2 };
 
     months.forEach(month => {
       categories.forEach(cat => {
@@ -1867,6 +1968,22 @@
         refreshAll();
       });
     });
+
+    // Currency toggle
+    const currencyToggle = document.getElementById('currency-toggle');
+    if (currencyToggle) {
+      currencyToggle.addEventListener('click', (e) => {
+        const label = e.target.closest('.toggle-label');
+        if (!label) return;
+        const cur = label.dataset.cur;
+        if (cur === displayCurrency) return;
+        displayCurrency = cur;
+        currencyToggle.querySelectorAll('.toggle-label').forEach(l => l.classList.toggle('active', l.dataset.cur === cur));
+        // Force re-render all pages
+        dirtyPages = new Set(['overview','datatable','categories','savings','suppliers','requesters','datamanage','ai-advisor']);
+        renderPage(activePage);
+      });
+    }
 
     // Table search
     document.getElementById('table-search-input').addEventListener('input', debounce(() => { currentPage = 1; renderTableBody(); }, 200));
@@ -2122,8 +2239,8 @@
       catEl.value   !== 'all' ? 'Category: ' + catEl.value : ''
     ].filter(Boolean).join(' | ') || 'All data (no filters applied)';
 
-    const r = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    const rk = (n) => '$' + (n / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
+    const r = (n) => curSym() + Number(displayCurrency === 'USD' ? n * EUR_USD_RATE : n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const rk = (n) => curSym() + ((displayCurrency === 'USD' ? n * EUR_USD_RATE : n) / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
     const sign = (n) => n < 0 ? '<span style="color:#16a34a">' + r(n) + '</span>' : n > 0 ? '<span style="color:#dc2626">' + r(n) + '</span>' : '—';
 
     const html = `<!DOCTYPE html>
@@ -2398,7 +2515,7 @@
           priority: catSpend > 50000 ? 'high' : 'medium',
           category: cat,
           title: 'Supplier Consolidation',
-          detail: suppliers.length + ' suppliers in ' + cat.split(',')[0] + ' — top 3 cover only ' + Math.round(top3Share * 100) + '% of spend ($' + Math.round(catSpend / 1000) + 'k). Fragmented buying reduces negotiating leverage.',
+          detail: suppliers.length + ' suppliers in ' + cat.split(',')[0] + ' — top 3 cover only ' + Math.round(top3Share * 100) + '% of spend (' + curSym() + Math.round(convK(catSpend) / 1000) + 'k). Fragmented buying reduces negotiating leverage.',
           affected: suppliers.slice(0, 4).map(([n]) => n),
           estimatedSavings,
           action: 'Issue an RFQ to consolidate to 2–3 preferred suppliers with volume commitments.',
@@ -2461,7 +2578,7 @@
         priority: tailSuppliers.length > 10 ? 'medium' : 'low',
         category: 'All Categories',
         title: 'Tail Spend Cleanup',
-        detail: tailSuppliers.length + ' suppliers each account for less than $5k in total spend (combined $' + Math.round(tailSpend / 1000) + 'k). Tail spend increases admin cost and reduces leverage.',
+        detail: tailSuppliers.length + ' suppliers each account for less than ' + curSym() + '5k in total spend (combined ' + curSym() + Math.round(convK(tailSpend) / 1000) + 'k). Tail spend increases admin cost and reduces leverage.',
         affected: tailSuppliers.slice(0, 5).map(([n]) => n),
         estimatedSavings: Math.round(tailSpend * 0.05),
         action: 'Consolidate tail suppliers into preferred vendors or a marketplace (e.g. Amazon Business). Target <20 active suppliers per category.',
@@ -2512,7 +2629,7 @@
           priority: catActualSpend > 100000 ? 'high' : 'medium',
           category: cat,
           title: 'No Savings Initiatives',
-          detail: cat.split(',')[0] + ' has $' + Math.round(catActualSpend / 1000) + 'k in spend but zero recorded savings initiatives. Industry benchmark is 3–7% savings annually.',
+          detail: cat.split(',')[0] + ' has ' + curSym() + Math.round(convK(catActualSpend) / 1000) + 'k in spend but zero recorded savings initiatives. Industry benchmark is 3–7% savings annually.',
           affected: [],
           estimatedSavings: Math.round(catActualSpend * 0.05),
           action: 'Launch a sourcing initiative: market benchmarking, RFQ, or demand management review.',
@@ -2535,7 +2652,7 @@
           priority: catSpend > 80000 ? 'high' : 'medium',
           category: cat,
           title: 'Single-Source Risk',
-          detail: cat.split(',')[0] + ' is 100% sourced from ' + supName + ' ($' + Math.round(catSpend / 1000) + 'k). No competitive leverage or supply continuity fallback.',
+          detail: cat.split(',')[0] + ' is 100% sourced from ' + supName + ' (' + curSym() + Math.round(convK(catSpend) / 1000) + 'k). No competitive leverage or supply continuity fallback.',
           affected: [supName],
           estimatedSavings: Math.round(catSpend * 0.08),
           action: 'Qualify a second supplier and run a competitive RFQ. Even a 20% split creates leverage for pricing negotiations.',
@@ -2572,7 +2689,7 @@
       '<div class="kpi-change ' + (highCount > 0 ? 'negative' : 'neutral') + '">' + highCount + ' high priority</div></div>' +
 
       '<div class="kpi-card"><div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>' +
-      '<div class="kpi-label">Potential Savings</div><div class="kpi-value">' + fmtUSD(totalSavings) + '</div>' +
+      '<div class="kpi-label">Potential Savings</div><div class="kpi-value">' + fmtEUR(totalSavings) + '</div>' +
       '<div class="kpi-change positive">' + savingsPct + '% of spend</div></div>' +
 
       '<div class="kpi-card"><div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>' +
@@ -2610,7 +2727,7 @@
         '<div class="ai-opp-action">' + f.action + '</div>' +
         (f.affected.length ? '<div class="ai-opp-affected">Affected: ' + f.affected.slice(0, 4).join(', ') + (f.affected.length > 4 ? '…' : '') + '</div>' : '') +
         '</div>' +
-        '<div class="ai-opp-savings"><div class="amount">' + (f.estimatedSavings >= 1000 ? '$' + Math.round(f.estimatedSavings / 1000) + 'k' : '$' + f.estimatedSavings) + '</div><div class="label">Est. savings</div></div>' +
+        '<div class="ai-opp-savings"><div class="amount">' + (f.estimatedSavings >= 1000 ? curSym() + Math.round(convK(f.estimatedSavings) / 1000) + 'k' : curSym() + Math.round(convK(f.estimatedSavings))) + '</div><div class="label">Est. savings</div></div>' +
         '</div>'
       ).join('');
     }
@@ -2631,7 +2748,7 @@
     const dates = filteredData.map(r => r.date).filter(Boolean).sort();
     const catBreakdown = {};
     actual.forEach(r => {
-      const c = r.cost_category || 'Other';
+      const c = r.cost_category || 'Miscellaneous Indirect Costs';
       if (!catBreakdown[c]) catBreakdown[c] = 0;
       catBreakdown[c] += r.total_amount_usd;
     });
@@ -2641,17 +2758,17 @@
     const prompt = `You are a senior procurement savings expert analyzing indirect spend data for a pharmaceutical company.
 
 SPEND SUMMARY:
-- Total actual spend: ${fmtUSD(totalSpend)}
+- Total actual spend: ${fmtEUR(totalSpend)}
 - Date range: ${dates[0] || '?'} to ${dates[dates.length - 1] || '?'}
 - Total records: ${filteredData.length}
 - Suppliers: ${new Set(actual.map(r => r.supplier).filter(Boolean)).size}
 - Categories: ${new Set(actual.map(r => r.cost_category).filter(Boolean)).size}
 
 CATEGORY BREAKDOWN (top 5):
-${topCats.map(([c, v]) => '- ' + c.split(',')[0] + ': ' + fmtUSD(v) + ' (' + pct(v, totalSpend) + '%)').join('\n')}
+${topCats.map(([c, v]) => '- ' + c.split(',')[0] + ': ' + fmtEUR(v) + ' (' + pct(v, totalSpend) + '%)').join('\n')}
 
-AUTOMATED ANALYSIS — ${findings.length} FINDINGS (est. total savings: ${fmtUSD(totalSavings)}):
-${findings.slice(0, 6).map((f, i) => (i + 1) + '. [' + f.priority.toUpperCase() + '] ' + f.title + ' — ' + f.category.split(',')[0] + '\n   ' + f.detail + '\n   Est. savings: ' + fmtUSD(f.estimatedSavings)).join('\n\n')}
+AUTOMATED ANALYSIS — ${findings.length} FINDINGS (est. total savings: ${fmtEUR(totalSavings)}):
+${findings.slice(0, 6).map((f, i) => (i + 1) + '. [' + f.priority.toUpperCase() + '] ' + f.title + ' — ' + f.category.split(',')[0] + '\n   ' + f.detail + '\n   Est. savings: ' + fmtEUR(f.estimatedSavings)).join('\n\n')}
 
 Please provide a concise, actionable procurement action plan:
 1. **Quick Wins (0–3 months)**: Highest-ROI actions requiring minimal lead time
@@ -3110,7 +3227,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
     const catCol = Object.entries(sapWizardState.columnMapping).find(([k, v]) => v === 'cost_category');
     
     if (!catCol) {
-      body.innerHTML = '<div class="sap-step-title">Category Mapping</div><div class="sap-step-desc">No column is mapped to Cost Category. You can skip this step - all entries will be assigned to "Other".</div><p style="color:var(--text-muted)">Go back and map a column (like Material Group / MATKL) to Category, or proceed and all data will be categorized as "Other".</p>';
+      body.innerHTML = '<div class="sap-step-title">Category Mapping</div><div class="sap-step-desc">No column is mapped to Cost Category. You can skip this step - all entries will be assigned to "Miscellaneous Indirect Costs".</div><p style="color:var(--text-muted)">Go back and map a column (like Material Group / MATKL) to Category, or proceed and all data will be categorized as "Miscellaneous Indirect Costs".</p>';
       return;
     }
     
@@ -3128,7 +3245,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
     const savedMappings = sapWizardState.categoryMapping;
     
     let html = '<div class="sap-step-title">Map SAP Values to Spend Categories</div>';
-    html += '<div class="sap-step-desc">Map each unique SAP material group / value (' + sortedValues.length + ' found) to one of the 8 spend categories. Previously saved mappings are loaded automatically.</div>';
+    html += '<div class="sap-step-desc">Map each unique SAP material group / value (' + sortedValues.length + ' found) to one of the 6 spend categories. Previously saved mappings are loaded automatically.</div>';
     
     if (sortedValues.length > 30) {
       html += '<div class="sap-warning-banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>' + sortedValues.length + ' unique values found. Review the most frequent ones - rare values can default to "Other".</div>';
@@ -3147,9 +3264,8 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
         else if (lower.includes('equip') || lower.includes('machine') || lower.includes('reactor') || lower.includes('prod') || lower.includes('manufactur')) autoGuess = 'Production Equipment';
         else if (lower.includes('warehouse') || lower.includes('logistics') || lower.includes('distrib') || lower.includes('transport') || lower.includes('storage')) autoGuess = 'External Warehouse and distribution';
         else if (lower.includes('consult') || lower.includes('professional') || lower.includes('advisory') || lower.includes('legal') || lower.includes('audit')) autoGuess = 'Professional Services';
-        else if (lower.includes('facility') || lower.includes('facilities') || lower.includes('building') || lower.includes('maintenance') || lower.includes('clean') || lower.includes('hvac')) autoGuess = 'Facilities Management';
-        else if (lower.includes('office') || lower.includes('print') || lower.includes('stationery') || lower.includes('paper') || lower.includes('toner')) autoGuess = 'Office and print';
-        else if (lower.includes('utility') || lower.includes('utilit') || lower.includes('electr') || lower.includes('water') || lower.includes('gas') || lower.includes('energy')) autoGuess = 'Utilities';
+        else if (lower.includes('office') || lower.includes('print') || lower.includes('stationery') || lower.includes('paper') || lower.includes('toner')) autoGuess = 'Office and Print';
+        else if (lower.includes('misc') || lower.includes('other') || lower.includes('facility') || lower.includes('utilit') || lower.includes('general')) autoGuess = 'Miscellaneous Indirect Costs';
       }
       
       html += '<tr><td class="sap-value">' + val + '</td>';
@@ -3200,7 +3316,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
     // Stats
     html += '<div class="preview-stats">';
     html += '<div class="preview-stat"><div class="label">Total Rows</div><div class="value">' + fullPreview.data.length + '</div></div>';
-    html += '<div class="preview-stat"><div class="label">Total Spend</div><div class="value" style="font-size:16px">' + fmtUSD(totalAmount) + '</div></div>';
+    html += '<div class="preview-stat"><div class="label">Total Spend</div><div class="value" style="font-size:16px">' + fmtEUR(totalAmount) + '</div></div>';
     html += '<div class="preview-stat"><div class="label">Suppliers</div><div class="value">' + uniqueSuppliers + '</div></div>';
     html += '<div class="preview-stat"><div class="label">SKUs</div><div class="value">' + uniqueSKUs + '</div></div>';
     html += '<div class="preview-stat"><div class="label">Date Range</div><div class="value" style="font-size:14px">' + (dateRange[0] || '?') + ' - ' + (dateRange[dateRange.length-1] || '?') + '</div></div>';
@@ -3221,7 +3337,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
     // Preview table
     html += '<div class="card-title" style="margin:16px 0 8px">Data Preview (first 10 rows after transformation)</div>';
     html += '<div class="preview-table-wrap"><table class="data-table"><thead><tr>';
-    ['Date','Category','SKU','Description','Supplier','Ordered By','Qty','Total (USD)'].forEach(h => { html += '<th>' + h + '</th>'; });
+    ['Date','Category','SKU','Description','Supplier','Ordered By','Qty','Total (EUR)'].forEach(h => { html += '<th>' + h + '</th>'; });
     html += '</tr></thead><tbody>';
     fullPreview.data.slice(0, 10).forEach(row => {
       html += '<tr>';
@@ -3232,7 +3348,7 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
       html += '<td>' + (row.supplier || '') + '</td>';
       html += '<td>' + (row.ordered_by || '') + '</td>';
       html += '<td class="num">' + fmt(row.quantity) + '</td>';
-      html += '<td class="currency">' + fmtUSD(row.total_amount_usd) + '</td>';
+      html += '<td class="currency">' + fmtEUR(row.total_amount_usd) + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -3274,9 +3390,9 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
           row[col.key] = parseSAPDate(val);
         } else if (col.key === 'cost_category') {
           const catVal = String(val).trim();
-          row[col.key] = catMapping[catVal] || 'Other';
+          row[col.key] = catMapping[catVal] || 'Miscellaneous Indirect Costs';
           if (!catMapping[catVal] && catVal && idx < 5) {
-            issues.push({ type: 'warn', message: 'Row ' + (idx+1) + ': Unknown category "' + catVal + '" mapped to Other' });
+            issues.push({ type: 'warn', message: 'Row ' + (idx+1) + ': Unknown category "' + catVal + '" mapped to Miscellaneous Indirect Costs' });
           }
         } else if (col.type === 'number') {
           row[col.key] = parseNumber(val);
