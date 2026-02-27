@@ -81,14 +81,15 @@
   function fmtK(n) {
     if (n == null || isNaN(n)) return '--';
     const val = displayCurrency === 'USD' ? Number(n) * EUR_USD_RATE : Number(n);
-    return (val / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return Math.round(val / 1000).toLocaleString('en-US');
   }
 
   function fmtEUR(n) {
     if (n == null || isNaN(n)) return '--';
     const val = displayCurrency === 'USD' ? Number(n) * EUR_USD_RATE : Number(n);
     const sym = displayCurrency === 'USD' ? '$' : '€';
-    return sym + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const k = Math.round(val / 1000);
+    return sym + k.toLocaleString('en-US') + 'k';
   }
 
   function curLabel(base) {
