@@ -415,7 +415,7 @@
 
   function updateFooter() {
     document.getElementById('record-count').textContent = allData.length;
-    document.getElementById('last-update').textContent = allData.length > 0 ? new Date().toLocaleDateString() : '--';
+    document.getElementById('last-update').textContent = allData.length > 0 ? new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--';
   }
 
   // ---- Render a single page by ID ----
