@@ -1,11 +1,23 @@
-date,cost_category,sub_category,sku,item_description,supplier,ordered_by,department,cost_center,po_number,quantity,unit_price_usd,total_amount_usd,budget_type,price_impact_usd,volume_impact_usd,insourcing_savings_usd,notes
-2026-01,"Clinical, Lab and scientific services",Analytical testing,LAB-0042,HPLC Column C18 250mm,Biorelliance,Jan Novak,QC Laboratory,CC-4200,PO-202601-0001,10,450.00,4500.00,Actual,-120.00,-50.00,0,
-2026-01,"Clinical, Lab and scientific services",Bioassay services,LAB-0088,Cell-based potency assay,Eurofins,Maria Schmidt,Quality Assurance,CC-4100,PO-202601-0002,5,2200.00,11000.00,Actual,-330.00,0,-1100.00,Internalized from external lab
-2026-01,Production Equipment,Bioreactor parts,PRD-1022,Single-use bioreactor bag 200L,Sartorius,Thomas Mueller,Production,CC-3100,PO-202601-0003,20,890.00,17800.00,Actual,-534.00,-178.00,0,
-2026-01,"External Warehouse and distribution",Cold storage,WHS-3001,Cold chain storage monthly fee,DHL Life Sciences,Elena Popovic,Supply Chain,CC-2100,PO-202601-0004,1,15000.00,15000.00,Actual,-300.00,0,0,
-2026-01,Professional Services,Consulting,SRV-5010,GMP compliance consulting,Deloitte,Katja Zupan,Regulatory,CC-4300,PO-202601-0005,40,350.00,14000.00,Actual,0,0,0,
-2026-02,"Clinical, Lab and scientific services",Stability testing,LAB-0055,ICH stability study package,SGS,Peter Horvat,QC Laboratory,CC-4200,PO-202602-0006,3,8500.00,25500.00,Actual,-765.00,0,-2550.00,Internalized GP/HX/FUB testing
-2026-02,Production Equipment,Filtration systems,PRD-2015,TFF cassette 30kDa,Merck Millipore,Maria Schmidt,Production,CC-3100,PO-202602-0007,15,1200.00,18000.00,Actual,-360.00,-180.00,-360.00,
-2026-02,"External Warehouse and distribution",Distribution services,WHS-3022,Temperature-controlled shipment EU,World Courier,Elena Popovic,Supply Chain,CC-2100,PO-202602-0008,8,2500.00,20000.00,Actual,-400.00,0,0,
-2026-02,Facilities Management,Cleanroom services,FAC-6001,GMP cleaning services monthly,Lombar GmbH,Marco Rossi,Facilities,CC-6000,PO-202602-0009,1,8500.00,8500.00,Actual,0,0,-850.00,Competitive tender for NON-GMP cleaning
-2026-02,"Clinical, Lab and scientific services",Method validation,LAB-0091,Analytical method transfer,Lek Pharmaceuticals,Ana Krajnc,R&D,CC-5000,PO-202602-0010,2,12000.00,24000.00,Actual,-480.00,0,-2400.00,Internalized to Mi-Bi Lab Ljubljana
+Indirect Category Mapping,Vendor,YTD Spend Dec 2025 (k EUR),Target 2026
+"Clinical, Lab and scientific services",Lek d.d.,"-1.816,87","-1.200,00"
+"Clinical, Lab and scientific services",Eurofins,"-850,33","-900,00"
+"Clinical, Lab and scientific services",SGS,"-1.240,00","-1.100,00"
+"Clinical, Lab and scientific services",Biorelliance,"-620,15","-600,00"
+"Clinical, Lab and scientific services",Charles River Labs,"-430,80","-400,00"
+Production Equipment,Sartorius,"-2.450,33","-2.100,00"
+Production Equipment,"Merck Millipore","-1.180,00","-1.050,00"
+Production Equipment,Cytiva,"-890,50","-800,00"
+Production Equipment,"Thermo Fisher","-560,20","-500,00"
+"External Warehouse and distribution","CARGO-PARTNER D.O.O.","-1.602,33","-1.500,00"
+"External Warehouse and distribution","DHL Life Sciences","-720,00","-680,00"
+"External Warehouse and distribution","World Courier","-540,10","-500,00"
+"Facilities Management","Lombar d.o.o.","-480,00","-450,00"
+"Facilities Management",ISS,"-310,50","-290,00"
+"Professional Services",Deloitte,"-395,00","-370,00"
+"Professional Services",KPMG,"-210,00","-200,00"
+"Office and print","Office Depot","-95,40","-90,00"
+"Office and print","Dell Technologies","-145,60","-130,00"
+Utilities,"Elektro Ljubljana","-280,00","-260,00"
+Utilities,"Local Water Utility","-62,30","-60,00"
+Other,"Amazon Business","-110,75","-100,00"
+Other,Various,"-88,20","-80,00"

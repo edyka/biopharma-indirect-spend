@@ -1911,7 +1911,9 @@
       const firstLine = text.split('\n')[0];
       const headers = firstLine.split(/[,;\t]/).map(h => h.trim().replace(/"/g, ''));
       const sapKeys = Object.keys(SAP_FIELD_MAP);
-      if (headers.filter(h => sapKeys.includes(h)).length >= 2) {
+      if (isSimpleSpendFormat(headers)) {
+        processSimpleCSV(text);
+      } else if (headers.filter(h => sapKeys.includes(h)).length >= 2) {
         startSAPWizard(text);
       } else {
         processCSV(text, false);
@@ -2702,6 +2704,150 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
   }
 
   // ============================================================
+  // ---- Simple Spend CSV (4-column, EUR format) ----
+  // Detects CSVs with: Indirect Category Mapping | Vendor | YTD Spend ... (k EUR) | Target YYYY
+  function isSimpleSpendFormat(headers) {
+    const lowers = headers.map(h => h.toLowerCase());
+    const hasCat = lowers.some(h => h.includes('indirect category') || h.includes('category mapping'));
+    const hasVendor = lowers.some(h => (h.includes('vendor') || h.includes('supplier')) && !h.includes('sub'));
+    const hasSpend = lowers.some(h => h.includes('spend') || (h.includes('ytd') && !h.includes('target')));
+    return hasCat && hasVendor && hasSpend;
+  }
+
+  function processSimpleCSV(csvText) {
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      complete: function(results) {
+        const headers = results.meta.fields || [];
+
+        // Locate columns
+        const catCol    = headers.find(h => { const l = h.toLowerCase(); return l.includes('indirect category') || l.includes('category mapping'); });
+        const vendorCol = headers.find(h => { const l = h.toLowerCase(); return (l.includes('vendor') || l.includes('supplier')) && !l.includes('sub'); });
+        const spendCol  = headers.find(h => { const l = h.toLowerCase(); return l.includes('spend') || (l.includes('ytd') && !l.includes('target')); });
+        const targetCol = headers.find(h => h.toLowerCase().includes('target'));
+
+        if (!catCol || !vendorCol || !spendCol) {
+          toast('Could not detect required columns (Category, Vendor, Spend)', 'error');
+          return;
+        }
+
+        // Extract date from spend column, e.g. "YTD Spend Dec 2025 (k EUR)" → 2025-12
+        let spendDate = '2025-12';
+        const monthMatch = spendCol.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i);
+        if (monthMatch) {
+          const monthIdx = MONTH_NAMES.findIndex(m => m.toLowerCase() === monthMatch[1].substring(0, 3).toLowerCase());
+          if (monthIdx >= 0) spendDate = monthMatch[2] + '-' + String(monthIdx + 1).padStart(2, '0');
+        }
+
+        // Is the spend already in thousands (k)?
+        const isKilo = /\(k[\s\u00a0]/i.test(spendCol) || /k[\s\u00a0]?eur/i.test(spendCol) || /k[\s\u00a0]?usd/i.test(spendCol);
+
+        // Extract target year
+        let targetYear = null;
+        if (targetCol) {
+          const ym = targetCol.match(/(\d{4})/);
+          if (ym) targetYear = ym[1];
+        }
+
+        // Parse a currency value that may carry €/$, EU thousands dots, and decimal commas
+        function parseCurrencyNum(val) {
+          if (val == null || val === '') return null;
+          let s = String(val).trim()
+            .replace(/€/g, '').replace(/EUR/gi, '').replace(/USD/gi, '').replace(/\$/g, '')
+            .trim().replace(/\s/g, '');
+          if (!s) return null;
+          if (s.endsWith('-')) s = '-' + s.slice(0, -1); // trailing minus
+          // EU format: 1.234,56 — dots are thousands sep, comma is decimal
+          if (/\d\.\d{3}/.test(s) || /,\d{1,2}$/.test(s)) {
+            s = s.replace(/\./g, '').replace(',', '.');
+          } else {
+            s = s.replace(/,/g, ''); // US thousands comma
+          }
+          const n = parseFloat(s);
+          return isNaN(n) ? null : n;
+        }
+
+        const newData = [];
+        const targetsByCategory = {};
+
+        results.data.forEach((row, i) => {
+          const cat    = String(row[catCol]    || '').trim();
+          const vendor = String(row[vendorCol] || '').trim();
+          if (!cat && !vendor) return;
+
+          const spendVal = parseCurrencyNum(row[spendCol]);
+          if (spendVal === null) return;
+
+          // Costs are often stored as negatives in source — use absolute value
+          const spendFull = isKilo ? Math.abs(spendVal) * 1000 : Math.abs(spendVal);
+
+          newData.push({
+            date: spendDate,
+            cost_category: cat || 'Other',
+            sub_category: '',
+            sku: 'VND-' + String(i + 1).padStart(4, '0'),
+            item_description: vendor || 'Vendor spend',
+            supplier: vendor || 'Unknown',
+            ordered_by: '',
+            department: '',
+            cost_center: '',
+            po_number: '',
+            quantity: 1,
+            unit_price_usd: spendFull,
+            total_amount_usd: spendFull,
+            budget_type: 'Actual',
+            price_impact_usd: 0,
+            volume_impact_usd: 0,
+            insourcing_savings_usd: 0,
+            notes: ''
+          });
+
+          // Accumulate per-category target
+          if (targetCol && targetYear) {
+            const targetVal = parseCurrencyNum(row[targetCol]);
+            if (targetVal !== null && targetVal !== 0) {
+              const targetFull = isKilo ? Math.abs(targetVal) * 1000 : Math.abs(targetVal);
+              if (!targetsByCategory[cat]) targetsByCategory[cat] = 0;
+              targetsByCategory[cat] += targetFull;
+            }
+          }
+        });
+
+        if (newData.length === 0) {
+          toast('No valid rows found in simple spend CSV', 'error');
+          return;
+        }
+
+        // Store aggregated targets for the target year
+        if (targetYear && Object.keys(targetsByCategory).length > 0) {
+          if (!categoryTargets[targetYear]) categoryTargets[targetYear] = {};
+          Object.entries(targetsByCategory).forEach(([cat, val]) => {
+            categoryTargets[targetYear][cat] = val;
+          });
+          saveTargets();
+        }
+
+        allData = newData;
+        reindexData();
+        saveToStorage();
+        updateFilterOptions();
+        applyGlobalFilters();
+        refreshAll();
+        updateFooter();
+
+        const targetMsg = targetYear && Object.keys(targetsByCategory).length > 0
+          ? ' + targets for ' + targetYear + ' (' + Object.keys(targetsByCategory).length + ' categories)'
+          : '';
+        toast('Loaded ' + newData.length + ' records from simple spend CSV' + targetMsg, 'success');
+      },
+      error: function(err) {
+        toast('CSV parse error: ' + err.message, 'error');
+      }
+    });
+  }
+
   // SAP S4 HANA IMPORT WIZARD
   // ============================================================
 

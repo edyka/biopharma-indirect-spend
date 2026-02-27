@@ -336,7 +336,7 @@
               <div class="upload-area" id="upload-area">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <h3>Drop CSV file here or click to browse</h3>
-                <p>Supports native format AND SAP S4 HANA exports (auto-detected)</p>
+                <p>Supports native format, simple spend format (Category/Vendor/YTD/Target), and SAP S4 HANA exports — all auto-detected</p>
               </div>
               <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
               <input type="file" id="sap-file-input" accept=".csv,.txt" style="display:none">
@@ -367,7 +367,21 @@
             <div id="target-settings-body"></div>
           </div>
           <div class="card" style="margin-top:20px">
-            <div class="card-header"><div><div class="card-title">CSV Format Specification</div><div class="card-subtitle">Your CSV must have these column headers (order does not matter)</div></div></div>
+            <div class="card-header"><div><div class="card-title">Simple Spend CSV Format (auto-detected)</div><div class="card-subtitle">4-column format with EU number formatting — uploaded files are detected automatically</div></div></div>
+            <div class="format-spec">
+              <table>
+                <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Description</th><th>Example</th></tr></thead>
+                <tbody>
+                  <tr><td><code>Indirect Category Mapping</code></td><td>Text</td><td>Yes</td><td>Main spend category</td><td>Clinical, Lab and scientific services</td></tr>
+                  <tr><td><code>Vendor</code></td><td>Text</td><td>Yes</td><td>Supplier / vendor name</td><td>Lek d.d.</td></tr>
+                  <tr><td><code>YTD Spend Dec 2025 (k EUR)</code></td><td>Number</td><td>Yes</td><td>YTD spend in thousands EUR, EU number format. Month &amp; year auto-parsed from header.</td><td>-1.816,87</td></tr>
+                  <tr><td><code>Target 2026</code></td><td>Number</td><td>No</td><td>Annual budget target — year auto-parsed from header, saved to Category Targets.</td><td>-1.200,00</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" style="margin-top:20px">
+            <div class="card-header"><div><div class="card-title">Native CSV Format Specification</div><div class="card-subtitle">Full 18-column format — column headers (order does not matter)</div></div></div>
             <div class="format-spec">
               <table>
                 <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Description</th><th>Example</th></tr></thead>
