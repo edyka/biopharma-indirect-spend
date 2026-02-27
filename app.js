@@ -421,7 +421,7 @@
   // ---- Render a single page by ID ----
   function renderPage(pageId) {
     switch (pageId) {
-      case 'overview':    renderKPIs(); renderCategorySummary(); renderTopLists(); renderCharts(); break;
+      case 'overview':    renderKPIs(); renderCategorySummary(); renderTopLists(); renderCharts(); renderOverviewPareto(); break;
       case 'datatable':   renderDataTable(); break;
       case 'categories':  renderCategoryPage(); break;
       case 'savings':     renderSavingsPage(); break;
@@ -629,6 +629,76 @@
   function renderCharts() {
     renderMonthlyTrendChart();
     renderCategoryPieChart();
+  }
+
+  function renderOverviewPareto() {
+    destroyChart('overviewPareto');
+    const data = filteredData.filter(r => !r.budget_type || r.budget_type === 'Actual' || r.budget_type === '');
+    const totalSpend = data.reduce((s, r) => s + r.total_amount_usd, 0);
+    if (totalSpend === 0) return;
+
+    const supMap = {};
+    data.forEach(r => {
+      const s = r.supplier || 'Unknown';
+      if (!supMap[s]) supMap[s] = 0;
+      supMap[s] += r.total_amount_usd;
+    });
+    const sorted = Object.entries(supMap).sort((a, b) => b[1] - a[1]);
+    const top = sorted.slice(0, 20);
+
+    let cumulative = 0;
+    const cumPct = top.map(([, v]) => { cumulative += v; return cumulative / totalSpend * 100; });
+
+    const ctx = document.getElementById('chart-overview-pareto');
+    if (!ctx) return;
+    charts.overviewPareto = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: top.map(([n]) => n.length > 16 ? n.slice(0, 14) + '..' : n),
+        datasets: [
+          {
+            label: 'Spend',
+            data: top.map(([, v]) => v / 1000),
+            backgroundColor: '#3b82f6',
+            borderRadius: 3,
+            yAxisID: 'y',
+            order: 2
+          },
+          {
+            label: 'Cumulative %',
+            data: cumPct,
+            type: 'line',
+            borderColor: '#f59e0b',
+            backgroundColor: 'transparent',
+            pointBackgroundColor: '#f59e0b',
+            pointRadius: 3,
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1',
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#e2e8f0', usePointStyle: true } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.datasetIndex === 0) return fmtEUR(ctx.raw * 1000);
+                return ctx.raw.toFixed(1) + '% cumulative';
+              }
+            }
+          }
+        },
+        scales: {
+          y: { beginAtZero: true, position: 'left', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => Math.round(convK(v)) + 'k' } },
+          y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#f59e0b', callback: v => v + '%' } },
+          x: { grid: { display: false }, ticks: { color: '#94a3b8', maxRotation: 45, font: { size: 10 } } }
+        }
+      }
+    });
   }
 
   function renderMonthlyTrendChart() {
