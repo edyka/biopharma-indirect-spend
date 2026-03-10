@@ -551,6 +551,20 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 }
 .sidebar-overlay.active { display: block; }
 
+/* ---- Remote Connection Page ---- */
+.remote-status {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.remote-status-ok { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+.remote-status-error { background: rgba(239,68,68,0.12); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+.remote-status-info { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+
+.fte-table-wrap { overflow-x: auto; }
+.fte-input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+
 /* ---- Responsive breakpoints ---- */
 @media (max-width: 900px) {
   .topbar { padding: 0 14px; gap: 10px; height: auto; min-height: var(--topbar-height); flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }

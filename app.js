@@ -52,6 +52,10 @@
   const STORAGE_KEY = 'biopharma_indirect_spend_data';
   const TARGETS_KEY = 'biopharma_category_targets';
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const AI_KEY_STORAGE = 'biopharma_claude_api_key';
+  const REMOTE_CFG_KEY = 'biopharma_remote_cfg';
+  const FTE_DATA_KEY = 'biopharma_fte_data';
+  const REMOTE_LOG_KEY = 'biopharma_remote_log';
 
   // ---- State ----
   let allData = [];
@@ -70,7 +74,10 @@
   let dirtyPages = new Set();
   let aiAdvisorKey = '';
   let categoryTargets = {};
-  const AI_KEY_STORAGE = 'biopharma_claude_api_key';
+  let remoteCfg = { url: '', auth: '', format: 'json', importMode: 'append', autoSync: false, interval: 15 };
+  let fteData = {};
+  let remoteSyncLog = [];
+  let autoSyncTimer = null;
 
   // ---- Utility Functions ----
   function fmt(n, decimals = 0) {
@@ -429,6 +436,7 @@
       case 'requesters':  renderRequesterPage(); break;
       case 'datamanage':  updateDataSummary(); renderTargetSettings(); break;
       case 'ai-advisor':  renderAIAdvisor(); break;
+      case 'remote':      renderRemotePage(); break;
     }
     dirtyPages.delete(pageId);
   }
@@ -436,7 +444,7 @@
   // ---- Refresh All Views ----
   function refreshAll() {
     renderPage(activePage);
-    ['overview','datatable','categories','savings','suppliers','requesters','datamanage','ai-advisor']
+    ['overview','datatable','categories','savings','suppliers','requesters','datamanage','ai-advisor','remote']
       .filter(p => p !== activePage)
       .forEach(p => dirtyPages.add(p));
   }
@@ -1998,7 +2006,7 @@
     const titles = {
       overview: 'Overview Dashboard', datatable: 'Spend Data Table', categories: 'Category Analysis',
       savings: 'Savings Tracker', suppliers: 'Supplier Analysis', requesters: 'Requester Analysis',
-      datamanage: 'Data Management', 'ai-advisor': 'AI Savings Advisor'
+      datamanage: 'Data Management', 'ai-advisor': 'AI Savings Advisor', remote: 'Remote Connection'
     };
     document.getElementById('page-title').textContent = titles[pageId] || pageId;
 
@@ -3567,13 +3575,294 @@ Keep the response under 450 words. Be specific and pharma-industry aware.`;
     origUpload.addEventListener('click', origUpload._clickHandler);
   }
 
+  // ---- Remote Connection & FTE ----
+
+  function loadRemoteCfg() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(REMOTE_CFG_KEY) || '{}');
+      Object.assign(remoteCfg, saved);
+    } catch(e) {}
+    try { fteData = JSON.parse(localStorage.getItem(FTE_DATA_KEY) || '{}'); } catch(e) {}
+    try { remoteSyncLog = JSON.parse(localStorage.getItem(REMOTE_LOG_KEY) || '[]'); } catch(e) {}
+  }
+
+  function saveRemoteCfg() {
+    localStorage.setItem(REMOTE_CFG_KEY, JSON.stringify(remoteCfg));
+  }
+
+  function saveFteData() {
+    localStorage.setItem(FTE_DATA_KEY, JSON.stringify(fteData));
+  }
+
+  function saveRemoteLog() {
+    localStorage.setItem(REMOTE_LOG_KEY, JSON.stringify(remoteSyncLog.slice(-50)));
+  }
+
+  function addSyncLog(status, msg) {
+    const ts = new Date().toLocaleString();
+    remoteSyncLog.unshift({ ts, status, msg });
+    saveRemoteLog();
+    const logEl = document.getElementById('remote-sync-log');
+    if (logEl) renderSyncLog(logEl);
+  }
+
+  function renderSyncLog(el) {
+    if (!remoteSyncLog.length) { el.innerHTML = '<em>No syncs yet.</em>'; return; }
+    el.innerHTML = remoteSyncLog.slice(0, 20).map(e =>
+      '<div style="display:flex;gap:6px;align-items:baseline;">' +
+      '<span style="color:' + (e.status === 'ok' ? 'var(--color-success,#10b981)' : 'var(--color-danger,#ef4444)') + ';font-size:10px;">' +
+      (e.status === 'ok' ? '&#x2714;' : '&#x2718;') + '</span>' +
+      '<span style="color:var(--text-muted);font-size:10px;white-space:nowrap;">' + e.ts + '</span>' +
+      '<span>' + e.msg + '</span>' +
+      '</div>'
+    ).join('');
+  }
+
+  function setRemoteStatus(msg, type) {
+    const el = document.getElementById('remote-status');
+    if (!el) return;
+    el.style.display = '';
+    el.className = 'remote-status remote-status-' + type;
+    el.textContent = msg;
+  }
+
+  async function doRemoteSync(silent) {
+    const url = remoteCfg.url.trim();
+    if (!url) { if (!silent) setRemoteStatus('No URL configured.', 'error'); return; }
+    if (!silent) setRemoteStatus('Connecting…', 'info');
+    try {
+      const headers = {};
+      if (remoteCfg.auth) headers['Authorization'] = remoteCfg.auth;
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+      let rows = [];
+      if (remoteCfg.format === 'csv') {
+        const text = await resp.text();
+        if (typeof Papa === 'undefined') throw new Error('PapaParse not loaded');
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: true });
+        rows = parsed.data;
+      } else {
+        const json = await resp.json();
+        rows = Array.isArray(json) ? json : (json.data || json.records || json.rows || []);
+      }
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error('No records returned from endpoint');
+      const processed = rows.map(r => ({
+        date: r.date || '',
+        cost_category: r.cost_category || r.category || '',
+        sub_category: r.sub_category || r.subcategory || '',
+        sku: r.sku || r.SKU || '',
+        item_description: r.item_description || r.description || '',
+        supplier: r.supplier || '',
+        ordered_by: r.ordered_by || r.orderedBy || '',
+        department: r.department || '',
+        cost_center: r.cost_center || r.costCenter || '',
+        po_number: r.po_number || r.poNumber || '',
+        quantity: parseFloat(r.quantity || 0) || 0,
+        unit_price_usd: parseFloat(r.unit_price_usd || r.unit_price || 0) || 0,
+        total_amount_usd: parseFloat(r.total_amount_usd || r.total_amount || 0) || 0,
+        budget_type: r.budget_type || r.budgetType || 'Actual',
+        price_impact_usd: parseFloat(r.price_impact_usd || r.price_impact || 0) || 0,
+        volume_impact_usd: parseFloat(r.volume_impact_usd || r.volume_impact || 0) || 0,
+        insourcing_savings_usd: parseFloat(r.insourcing_savings_usd || r.insourcing_savings || 0) || 0,
+        notes: r.notes || ''
+      }));
+      if (remoteCfg.importMode === 'replace') {
+        allData = processed;
+      } else {
+        allData = allData.concat(processed);
+      }
+      saveToStorage();
+      updateFilterOptions();
+      applyGlobalFilters();
+      refreshAll();
+      updateFooter();
+      const msg = 'Synced ' + processed.length + ' records (' + remoteCfg.importMode + ')';
+      addSyncLog('ok', msg);
+      if (!silent) { setRemoteStatus(msg, 'ok'); toast(msg, 'success'); }
+    } catch(err) {
+      addSyncLog('error', err.message);
+      if (!silent) { setRemoteStatus('Error: ' + err.message, 'error'); toast('Remote sync failed: ' + err.message, 'error'); }
+    }
+  }
+
+  async function testRemoteConnection() {
+    const url = document.getElementById('remote-url').value.trim();
+    if (!url) { setRemoteStatus('Enter a URL first.', 'error'); return; }
+    setRemoteStatus('Testing connection…', 'info');
+    try {
+      const headers = {};
+      const auth = document.getElementById('remote-auth').value.trim();
+      if (auth) headers['Authorization'] = auth;
+      const resp = await fetch(url, { method: 'HEAD', headers });
+      if (resp.ok || resp.status === 405) {
+        setRemoteStatus('Connection successful (HTTP ' + resp.status + ')', 'ok');
+      } else {
+        setRemoteStatus('Server responded with HTTP ' + resp.status, 'error');
+      }
+    } catch(err) {
+      setRemoteStatus('Connection failed: ' + err.message, 'error');
+    }
+  }
+
+  function startAutoSync() {
+    stopAutoSync();
+    if (!remoteCfg.autoSync || !remoteCfg.url) return;
+    const ms = (remoteCfg.interval || 15) * 60 * 1000;
+    autoSyncTimer = setInterval(() => doRemoteSync(true), ms);
+  }
+
+  function stopAutoSync() {
+    if (autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; }
+  }
+
+  function renderFteDepts() {
+    const body = document.getElementById('fte-dept-body');
+    if (!body) return;
+    const depts = Object.keys(fteData);
+    if (depts.length === 0) {
+      body.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:12px 0;">No departments added yet. Click "+ Add Department" to start.</p>';
+    } else {
+      body.innerHTML = '<div class="fte-table-wrap"><table class="data-table"><thead><tr><th>Department</th><th>FTE Count</th><th>Total Spend (EUR)</th><th>Spend / FTE</th><th></th></tr></thead><tbody>' +
+        depts.map(dept => {
+          const fte = fteData[dept] || 0;
+          const spend = allData.filter(r => (r.department || '').toLowerCase() === dept.toLowerCase() && (!r.budget_type || r.budget_type === 'Actual')).reduce((s, r) => s + r.total_amount_usd, 0);
+          const perFte = fte > 0 ? spend / fte : 0;
+          return '<tr>' +
+            '<td>' + dept + '</td>' +
+            '<td><input type="number" class="fte-input" data-dept="' + dept + '" value="' + fte + '" min="0" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text-primary);font-size:13px;"></td>' +
+            '<td class="currency">' + fmtEUR(spend) + '</td>' +
+            '<td class="currency">' + (fte > 0 ? fmtEUR(perFte) : '—') + '</td>' +
+            '<td><button class="btn btn-danger btn-sm" data-remove-dept="' + dept + '" style="padding:2px 8px;font-size:11px;">Remove</button></td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table></div>';
+
+      body.querySelectorAll('.fte-input').forEach(inp => {
+        inp.addEventListener('change', (e) => {
+          const d = e.target.dataset.dept;
+          fteData[d] = parseFloat(e.target.value) || 0;
+          saveFteData();
+          renderFteSummary();
+        });
+      });
+      body.querySelectorAll('[data-remove-dept]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          delete fteData[btn.dataset.removeDept];
+          saveFteData();
+          renderFteDepts();
+          renderFteSummary();
+        });
+      });
+    }
+    renderFteSummary();
+  }
+
+  function renderFteSummary() {
+    const el = document.getElementById('fte-summary');
+    if (!el) return;
+    const totalFte = Object.values(fteData).reduce((s, v) => s + v, 0);
+    const totalSpend = allData.filter(r => !r.budget_type || r.budget_type === 'Actual').reduce((s, r) => s + r.total_amount_usd, 0);
+    const perFte = totalFte > 0 ? totalSpend / totalFte : 0;
+    el.innerHTML = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-top:0;">' +
+      '<div class="kpi-card"><div class="kpi-label">Total FTE</div><div class="kpi-value">' + fmt(totalFte) + '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Total Actual Spend</div><div class="kpi-value">' + fmtEUR(totalSpend) + '</div></div>' +
+      '<div class="kpi-card"><div class="kpi-label">Spend / FTE</div><div class="kpi-value">' + (totalFte > 0 ? fmtEUR(perFte) : '—') + '</div></div>' +
+      '</div>';
+  }
+
+  function renderRemotePage() {
+    // Populate form fields from saved config
+    const urlEl = document.getElementById('remote-url');
+    const authEl = document.getElementById('remote-auth');
+    const fmtEl = document.getElementById('remote-format');
+    const modeEl = document.getElementById('remote-import-mode');
+    const intervalEl = document.getElementById('remote-interval');
+    if (urlEl) urlEl.value = remoteCfg.url || '';
+    if (authEl) authEl.value = remoteCfg.auth || '';
+    if (fmtEl) fmtEl.value = remoteCfg.format || 'json';
+    if (modeEl) modeEl.value = remoteCfg.importMode || 'append';
+    if (intervalEl) intervalEl.value = String(remoteCfg.interval || 15);
+
+    // Auto-sync toggle state
+    const onLabel = document.getElementById('remote-autosync-on');
+    const offLabel = document.getElementById('remote-autosync-off');
+    if (onLabel && offLabel) {
+      if (remoteCfg.autoSync) { onLabel.classList.add('active'); offLabel.classList.remove('active'); }
+      else { offLabel.classList.add('active'); onLabel.classList.remove('active'); }
+    }
+
+    // Sync log
+    const logEl = document.getElementById('remote-sync-log');
+    if (logEl) renderSyncLog(logEl);
+
+    // FTE
+    renderFteDepts();
+  }
+
+  function setupRemoteEvents() {
+    document.getElementById('btn-remote-test').addEventListener('click', testRemoteConnection);
+
+    document.getElementById('btn-remote-sync').addEventListener('click', () => {
+      remoteCfg.url = document.getElementById('remote-url').value.trim();
+      remoteCfg.auth = document.getElementById('remote-auth').value.trim();
+      remoteCfg.format = document.getElementById('remote-format').value;
+      remoteCfg.importMode = document.getElementById('remote-import-mode').value;
+      doRemoteSync(false);
+    });
+
+    document.getElementById('btn-remote-save-cfg').addEventListener('click', () => {
+      remoteCfg.url = document.getElementById('remote-url').value.trim();
+      remoteCfg.auth = document.getElementById('remote-auth').value.trim();
+      remoteCfg.format = document.getElementById('remote-format').value;
+      remoteCfg.importMode = document.getElementById('remote-import-mode').value;
+      remoteCfg.interval = parseInt(document.getElementById('remote-interval').value) || 15;
+      saveRemoteCfg();
+      startAutoSync();
+      toast('Remote connection config saved', 'success');
+    });
+
+    document.getElementById('remote-autosync-toggle').addEventListener('click', () => {
+      remoteCfg.autoSync = !remoteCfg.autoSync;
+      const onLabel = document.getElementById('remote-autosync-on');
+      const offLabel = document.getElementById('remote-autosync-off');
+      if (remoteCfg.autoSync) { onLabel.classList.add('active'); offLabel.classList.remove('active'); }
+      else { offLabel.classList.add('active'); onLabel.classList.remove('active'); }
+      saveRemoteCfg();
+      startAutoSync();
+      toast('Auto-sync ' + (remoteCfg.autoSync ? 'enabled' : 'disabled'), 'info');
+    });
+
+    document.getElementById('btn-add-fte-dept').addEventListener('click', () => {
+      const depts = allData.map(r => r.department).filter(Boolean);
+      const uniqueDepts = [...new Set(depts)].filter(d => !fteData.hasOwnProperty(d));
+      if (uniqueDepts.length > 0) {
+        // Add all departments from spend data not yet tracked
+        uniqueDepts.forEach(d => { if (!fteData.hasOwnProperty(d)) fteData[d] = 0; });
+        saveFteData();
+        renderFteDepts();
+        toast('Added ' + uniqueDepts.length + ' department(s) from spend data', 'info');
+      } else {
+        // Prompt for a custom department name
+        const name = prompt('Enter department name:');
+        if (name && name.trim()) {
+          fteData[name.trim()] = 0;
+          saveFteData();
+          renderFteDepts();
+        }
+      }
+    });
+  }
+
   // ---- Initialize ----
   function init() {
     aiAdvisorKey = localStorage.getItem(AI_KEY_STORAGE) || '';
     loadTargets();
+    loadRemoteCfg();
     setupEventListeners();
     setupTabs();
     setupSAPWizardEvents();
+    setupRemoteEvents();
+    startAutoSync();
 
     const hasData = loadFromStorage();
     if (hasData) {

@@ -52,6 +52,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Data Management
         </div>
+        <div class="nav-item" data-page="remote">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          Remote Connection
+        </div>
       </nav>
       <div class="sidebar-footer">
         <div>Data loaded: <span id="record-count">0</span> records</div>
@@ -406,6 +410,88 @@
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+        <!-- REMOTE CONNECTION -->
+        <div class="page" id="page-remote">
+          <div class="data-mgmt-grid">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Remote Data Endpoint</div><div class="card-subtitle">Fetch spend data from a remote URL (JSON or CSV)</div></div></div>
+              <div style="display:flex;flex-direction:column;gap:14px;margin-top:4px;">
+                <div class="form-group">
+                  <label>Endpoint URL</label>
+                  <input type="url" class="form-control" id="remote-url" placeholder="https://your-server.com/api/spend-data">
+                </div>
+                <div class="form-group">
+                  <label>Authorization Header (optional)</label>
+                  <input type="text" class="form-control" id="remote-auth" placeholder="Bearer your-token-here">
+                </div>
+                <div class="form-group">
+                  <label>Data Format</label>
+                  <select class="form-control" id="remote-format">
+                    <option value="json">JSON (array of spend records)</option>
+                    <option value="csv">CSV (with standard headers)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Import Mode</label>
+                  <select class="form-control" id="remote-import-mode">
+                    <option value="append">Append to existing data</option>
+                    <option value="replace">Replace all existing data</option>
+                  </select>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn btn-secondary" id="btn-remote-test">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Test Connection
+                  </button>
+                  <button class="btn btn-primary" id="btn-remote-sync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    Sync Now
+                  </button>
+                  <button class="btn btn-secondary" id="btn-remote-save-cfg">Save Config</button>
+                </div>
+                <div id="remote-status" class="remote-status" style="display:none"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Auto-Sync</div><div class="card-subtitle">Automatically refresh data on a schedule</div></div></div>
+              <div style="display:flex;flex-direction:column;gap:14px;margin-top:4px;">
+                <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+                  <label style="margin:0;white-space:nowrap;">Enable Auto-Sync</label>
+                  <div class="toggle-switch" id="remote-autosync-toggle" title="Toggle automatic sync">
+                    <span class="toggle-label" id="remote-autosync-off">OFF</span>
+                    <span class="toggle-sep">/</span>
+                    <span class="toggle-label" id="remote-autosync-on">ON</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Sync Interval</label>
+                  <select class="form-control" id="remote-interval">
+                    <option value="5">Every 5 minutes</option>
+                    <option value="15" selected>Every 15 minutes</option>
+                    <option value="30">Every 30 minutes</option>
+                    <option value="60">Every hour</option>
+                  </select>
+                </div>
+                <div class="card-title" style="margin:8px 0 4px;font-size:13px;">Sync History</div>
+                <div id="remote-sync-log" style="font-size:12px;color:var(--text-secondary);line-height:1.9;max-height:180px;overflow-y:auto;">
+                  <em>No syncs yet.</em>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- FTE Headcount Section -->
+          <div class="card" style="margin-top:20px">
+            <div class="card-header">
+              <div>
+                <div class="card-title">FTE Headcount per Department</div>
+                <div class="card-subtitle">Enter full-time equivalent staff per department to calculate spend-per-FTE benchmarks</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btn-add-fte-dept">+ Add Department</button>
+            </div>
+            <div id="fte-dept-body"></div>
+            <div id="fte-summary" style="margin-top:16px;"></div>
           </div>
         </div>
       </div>
